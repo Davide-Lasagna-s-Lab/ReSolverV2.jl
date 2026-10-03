@@ -172,11 +172,13 @@ for kind in kinds
     scatter!(ax1, xs[isnan.(ys)], sp[isnan.(ys)]; color=:white, strokecolor=colors[kind],
              strokewidth=1.5, marker=marks[kind], markersize=11)
 end
+# room on the right for the legend
+xlims!(ax1, 1e3, 1e6)
 ylims!(ax1, 1e2, 1e4)
-logticks!(ax1, minimum(values(sizes)), maximum(values(sizes)))
+logticks!(ax1, 1e3, 1e6)
 logticks!(ax1, 1e2, 1e4; axis=:y)
 text!(ax1, 0.03, 0.97; space=:relative, align=(:left, :top), fontsize=11,
-      text="open symbols: not converged in 12 Newton iterations")
+      text="open symbols: not converged in 12 Newton iterations (none, frequency and viscous overlap)")
 axislegend(ax1; position=:rc)
 
 # ---- inner solve of the first Newton iteration, finest grid ----

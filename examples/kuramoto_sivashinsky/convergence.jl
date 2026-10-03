@@ -14,7 +14,8 @@
 # relative residual of the Newton system after each Arnoldi step of the first three iterations.
 #
 # tolerance.png: the cost of bringing the residual below 10⁻⁹, in Jacobian actions, time and Newton
-# iterations, against the tolerance on the Newton system, from 0.95 to 10⁻¹⁰.
+# iterations, against the tolerance on the Newton system, from 0.95 to 10⁻¹⁰, with the
+# preconditioner.
 
 using Random
 using Printf
@@ -97,10 +98,10 @@ end
 tols = [0.95; 0.9:-0.1:0.2; 10.0 .^ (-1:-1:-10)]
 cost = Dict()
 
-# without preconditioner only the coarsest grid is tried: the finer ones do not converge
-for f in factors, name in names, τ in tols
-    (name == "no preconditioner" && f > 1) && continue
-
+# only with the preconditioner: without, the hookstep converges at no tolerance, even on the
+# coarsest grid, because the Krylov spaces of 200 vectors never reach it
+for f in factors, τ in tols
+    name  = "preconditioner"
     trace = search(f, name, τ; maxiter=200)
     done  = trace.res[end] < tol
 
@@ -108,7 +109,7 @@ for f in factors, name in names, τ in tols
                           time     = done ? trace.time[end] : NaN,
                           newton   = done ? length(trace) - 1 : NaN)
 
-    @printf "  tolerance %.0e, %3d × %3d, %-18s %s\n" τ grid(f).Nx grid(f).Ns name done ? "converged" : "not converged"
+    @printf "  tolerance %.2g, %3d × %3d: %s, %5.0f Jacobian actions, %3.0f Newton iterations, %6.2f s\n" τ grid(f).Nx grid(f).Ns done ? "converged    " : "not converged" cost[(f, name, τ)].jacobian cost[(f, name, τ)].newton cost[(f, name, τ)].time
     flush(stdout)
 end
 
@@ -188,8 +189,13 @@ for ax in bottom
     ylims!(ax, 1e-4, 2)
     logticks!(ax, 1e-4, 1; axis=:y)
 end
-logticks!(top[2], minimum(jac), maximum(jac))
-logticks!(top[3], minimum(tim), maximum(tim))
+# the cost axes span whole decades, so that every one has a labelled major tick
+for (ax, vals) in zip(top[2:3], (jac, tim))
+    lo = 10.0^floor(log10(minimum(vals)))
+    hi = 10.0^ceil(log10(maximum(vals)))
+    xlims!(ax, lo, hi)
+    logticks!(ax, lo, hi)
+end
 
 # ---- the same residual axis across each row ----
 linkyaxes!(top...)
@@ -232,15 +238,18 @@ end
 for ax in axc
     logticks!(ax, minimum(tols), maximum(tols))
 end
+# the logarithmic axes span whole decades, so that every one has a labelled major tick
 for (ax, field) in zip(axc[1:2], (:jacobian, :time))
     vals = filter(isfinite, [getfield(c, field) for c in values(cost)])
-    logticks!(ax, minimum(vals), maximum(vals); axis=:y)
+    lo   = 10.0^floor(log10(minimum(vals)))
+    hi   = 10.0^ceil(log10(maximum(vals)))
+    ylims!(ax, lo, hi)
+    logticks!(ax, lo, hi; axis=:y)
 end
 
 Legend(fig[2, 1:3],
-       [[[LineElement(color=c), MarkerElement(color=c, marker=m, markersize=9)] for (c, m) in zip(colors, markers)];
-        [LineElement(color=:black, linestyle=style[n]) for n in keys(style)]],
-       [["$(grid(f).Nx) × $(grid(f).Ns)" for f in factors]; collect(keys(style))];
+       [[LineElement(color=c), MarkerElement(color=c, marker=m, markersize=9)] for (c, m) in zip(colors, markers)],
+       ["$(grid(f).Nx) × $(grid(f).Ns), preconditioner" for f in factors];
        orientation=:horizontal, framevisible=false)
 
 save(joinpath(@__DIR__, "tolerance.png"), fig)

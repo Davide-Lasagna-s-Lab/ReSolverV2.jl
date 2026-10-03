@@ -136,17 +136,97 @@ and 8 in both directions, its log-frequency and drift speed are perturbed by ``0
 relative residual of the Newton system after each Arnoldi step, for the first three Newton
 iterations. Solid lines: linear preconditioner; dashed: none.*
 
-CONVERGENCE_KS
+| grid | unknowns | ``\lVert r\rVert``, no preconditioner | Jacobian actions | ``\lVert r\rVert``, linear preconditioner | Newton iterations | Jacobian actions | time |
+|---|---|---|---|---|---|---|---|
+| base | 1 619 | ``5.5 \times 10^{-3}`` | 2400 | ``1.6 \times 10^{-10}`` | 3 | 449 | 0.7 s |
+| ``\times 2`` | 6 307 | ``6.6 \times 10^{-3}`` | 2400 | ``1.5 \times 10^{-10}`` | 3 | 462 | 1.6 s |
+| ``\times 4`` | 24 899 | ``1.2 \times 10^{-2}`` | 2400 | ``1.6 \times 10^{-10}`` | 3 | 469 | 5.8 s |
+| ``\times 8`` | 98 947 | ``1.4 \times 10^{-2}`` | 2400 | ``3.0 \times 10^{-10}`` | 3 | 475 | 22.8 s |
+
+*Final residual and cost, from ``\lVert r\rVert = 1.6 \times 10^{-2}``. Without preconditioner the
+search is stopped after 12 Newton iterations.*
+
+With the preconditioner, Newton converges in 3 iterations on every grid, and the cost in Jacobian
+actions grows by 6% over a 61-fold increase of the number of unknowns: the method is
+mesh-independent. The computing time grows by factors of 2.3, 3.6 and 3.9 between successive grids,
+approaching the factor of four by which the number of unknowns grows: the work per unknown is
+constant, the best that can be expected. The residual drops from ``1.6 \times 10^{-2}`` to
+``1.2 \times 10^{-4}``, ``1.5 \times 10^{-7}`` and ``2 \times 10^{-10}``: after the first step the
+convergence is linear with ratio ``10^{-3}``, the tolerance of the inner solve, rather than quadratic.
+This is the behaviour of an inexact Newton method whose forcing term is constant (Dembo, Eisenstat
+& Steihaug 1982): each step reduces the residual of the linear model by ``\tau``, and once the error
+of the linearisation, quadratic in the step, falls below that, ``\tau`` sets the rate.
+
+Each inner solve takes 145 to 170 Arnoldi steps, and the curves of the four grids nearly coincide.
+They descend in stages, with plateaus, for instance at a relative residual of about ``0.4`` during the
+first 70 steps of the third iteration: GMRES first resolves the eigenvalues of
+``\mathcal{J}B^{-1}`` that lie far from one, on the arcs towards ``\pm\mathrm{i}`` described in
+[Preconditioners](#Preconditioners), and only then converges at the rate set by the cluster.
+These eigenvalues belong to the large scales, which are the same on every grid, hence the
+independence of the resolution.
+
+Without preconditioner, every inner solve exhausts the Krylov space of 200 vectors: in the first
+Newton iteration the relative residual of the Newton system stagnates between ``0.45`` and ``0.9``,
+and in the following ones it stays close to one. The steps are almost useless, and after 12
+iterations and 2400 Jacobian actions the residual has dropped by a factor of three on the base grid,
+and hardly at all on the finest. Unlike the Lorenz system, where the unpreconditioned solve
+succeeds as long as the Krylov space can span the whole problem, here the problem is larger than the
+Krylov space already on the base grid, with 1 619 unknowns.
 
 ## Tolerance of the inner solve
 
 ![Cost against the tolerance of the Newton system, Kuramoto–Sivashinsky](../assets/ks_tolerance.png)
 
 *Cost of ``\lVert r\rVert < 10^{-9}`` in Jacobian actions, time and Newton iterations, against the
-tolerance on the Newton system. Missing points did not converge within 200 Newton iterations.
-Without preconditioner only the base grid is shown.*
+tolerance on the Newton system, with the linear preconditioner. Missing points did not converge within
+200 Newton iterations. Without preconditioner the search converges at no tolerance, even on the base
+grid.*
 
-TOLERANCE_KS
+| ``\tau`` | Newton iterations | Jacobian actions, base | ``\times 8`` | mean contraction of ``\lVert r\rVert`` per iteration |
+|---|---|---|---|---|
+| 0.95 | not converged | — | — | — |
+| 0.9 | 128–134 | 2415 | 2627 | 0.88 |
+| 0.8 | 66–67 | 1513 | 1684 | 0.78 |
+| 0.5 | 23–24 | 924 | 1017 | 0.49 |
+| 0.3 | 14 | 770 | 806 | 0.31 |
+| 0.1 | 8 | 647 | 697 | 0.13 |
+| ``10^{-2}`` | 4 | 482 | 509 | |
+| ``10^{-3}`` | 3 | 449 | 475 | |
+| ``10^{-4}`` | 3 | 517 | 548 | |
+| ``\le 10^{-6}`` | 3 | 600 | 600 | |
+
+*Cost of ``\lVert r\rVert < 10^{-9}`` from ``\lVert r\rVert = 1.6 \times 10^{-2}``, linear
+preconditioner. The ranges of Newton iterations cover the four grids. The mean contraction is
+``(10^{-9} / 1.6 \times 10^{-2})^{1/n}`` over the ``n`` iterations on the base grid.*
+
+The number of Newton iterations depends on the tolerance and not at all on the grid, and for loose
+tolerances it follows the theory of inexact Newton methods with remarkable accuracy: the residual
+contracts by a factor equal to ``\tau`` at every iteration, 0.88 for ``\tau = 0.9``, 0.49 for
+``\tau = 0.5``, 0.31 for ``\tau = 0.3``. The hookstep takes the full inexact Newton step, whose
+linear model reduces the residual by exactly ``\tau``, and the linearisation error is negligible at
+these small residuals. For ``\tau = 0.95`` the contraction is too weak to reach ``10^{-9}`` within 200
+iterations.
+
+The cost in Jacobian actions has a minimum at ``\tau = 10^{-3}`` on every grid, 449 to 475 actions,
+and is flat around it: ``10^{-2}`` costs 7% more and ``10^{-4}`` 15% more. Tightening the tolerance
+beyond ``10^{-5}`` changes nothing, because each inner solve then fills the whole Krylov space of 200
+vectors, and the cost saturates at ``3 \times 200 = 600`` actions; 200 Arnoldi steps reduce the
+residual of the Newton system well below what Newton needs to converge in 3 iterations, so these
+searches still converge. Loosening it is costlier, up to five times the minimum at ``\tau = 0.9``.
+The minimum lies at a tighter tolerance than for the Lorenz system, where it was ``10^{-4}`` with the
+jacobian preconditioner, but the reason is the same: with Newton converging in 3 or 4 iterations, a
+tighter inner solve buys nothing, and a looser one multiplies the iterations.
+
+The computing time tells a different story on the smallest grids. On the base grid the fastest
+searches use loose tolerances, ``\tau`` between 0.6 and 0.9, at about 0.3 s against 1.4 s at
+``10^{-3}``: with 1 619 unknowns a Jacobian action is cheap, and the time is dominated by the
+orthogonalisation of the Arnoldi vectors, whose cost grows with the square of the dimension of the
+Krylov space, and by the dense linear algebra of the hookstep. Many short Krylov spaces are then
+cheaper than a few long ones. As the grid is refined, the Jacobian actions become dominant and the
+minimum of the time moves to the minimum of the actions: on the finest grid the fastest searches use
+``\tau = 10^{-2}`` and ``10^{-3}``, 28 and 32 s, against 107 s at ``\tau = 0.9``. For large problems,
+where the Jacobian action is the expensive operation, the count of actions is the relevant measure,
+and a tolerance between ``10^{-2}`` and ``10^{-4}`` is a safe choice.
 
 ## Preconditioners
 
@@ -180,8 +260,9 @@ divide the log-frequency by ``\lVert \omega_0\,\partial_s u_0\rVert`` and the dr
 ![Preconditioners for the Kuramoto–Sivashinsky orbit](../assets/ks_preconditioners.png)
 
 *Top left: Jacobian actions to ``\lVert r\rVert < 10^{-9}`` against the number of unknowns, with
-``\tau = 10^{-3}``. Top centre: relative residual of the Newton system in the first Newton iteration,
-finest grid. Top right: singular values of ``\mathcal{J}B^{-1}`` at the converged orbit, base grid.
+``\tau = 10^{-3}``; the open symbols of the three preconditioners that do not converge overlap.
+Top centre: relative residual of the Newton system in the first Newton iteration, finest grid. Top
+right: singular values of ``\mathcal{J}B^{-1}`` at the converged orbit, base grid.
 Bottom: eigenvalues of ``\mathcal{J}B^{-1}``, base grid.*
 
 | grid | unknowns | none | frequency | viscous | linear | jacobian |
@@ -189,7 +270,7 @@ Bottom: eigenvalues of ``\mathcal{J}B^{-1}``, base grid.*
 | base | 1 619 | — | — | — | 449 | 142 |
 | ``\times 2`` | 6 307 | — | — | — | 462 | 142 |
 | ``\times 4`` | 24 899 | — | — | — | 469 | 142 |
-| ``\times 8`` | 98 947 | — | — | — | 476 | JAC8 |
+| ``\times 8`` | 98 947 | — | — | — | 476 | 142 |
 | ``\kappa(\mathcal{J}B^{-1})``, base | | ``2.4 \times 10^{4}`` | ``3.1 \times 10^{4}`` | ``1.3 \times 10^{3}`` | ``2.4 \times 10^{2}`` | ``1.6 \times 10^{3}`` |
 
 *Jacobian actions to ``\lVert r\rVert < 10^{-9}``, ``\tau = 10^{-3}``, Krylov spaces of at most 200
@@ -231,8 +312,8 @@ this structure, with the advection ``-\partial_x(u\,\cdot)`` as a perturbation:
   damp a polynomial on an arc that nearly reaches the origin from both sides, and needs about 150
   Arnoldi steps per Newton iteration.
 - **Jacobian.** Dividing by ``\hat A_0`` itself removes the phase too, and maps the linear part of
-  ``\mathcal{J}`` to the identity: half of the eigenvalues are within ``0.044`` of one and 90% within
-  ``0.28``. The remaining few are spread over ``-1.7 < \mathrm{Re}\,\lambda < 4`` and
+  ``\mathcal{J}`` to the identity: the eigenvalues form a compact, X-shaped cluster centred at one,
+  with half of them within ``0.044`` of one and 90% within ``0.28``. The remaining few are spread over ``-1.7 < \mathrm{Re}\,\lambda < 4`` and
   ``|\mathrm{Im}\,\lambda| \approx 1.2``: the advection ``-\partial_x(u\,\cdot)``, which the
   preconditioner ignores, is not small on the linearly unstable wavenumbers, where ``\hat A_0`` is.
   GMRES deflates these outliers in a few steps and converges in about 47 Arnoldi steps per Newton
@@ -266,5 +347,7 @@ convergence study, and the jacobian one is the better choice for the hookstep al
 
 - P. Cvitanović, R. L. Davidchack and E. Siminos, *On the state space geometry of the
   Kuramoto–Sivashinsky flow in a periodic domain*, SIAM J. Appl. Dyn. Syst. 9, 1–33 (2010).
+- R. S. Dembo, S. C. Eisenstat and T. Steihaug, *Inexact Newton methods*, SIAM J. Numer. Anal. 19,
+  400–408 (1982).
 - A.-K. Kassam and L. N. Trefethen, *Fourth-order time-stepping for stiff PDEs*, SIAM J. Sci.
   Comput. 26, 1214–1233 (2005).
