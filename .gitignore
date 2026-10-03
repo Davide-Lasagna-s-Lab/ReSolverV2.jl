@@ -1,2 +1,5 @@
 Manifest.toml
 */Manifest.toml
+notes/
+docs/build/
+docs/src/assets/

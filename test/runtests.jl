@@ -1,68 +1,53 @@
 using Test
 using LinearAlgebra
 using Random
-using FFTW
-using ReSolverFlowsBase
-using ReSolverEquations
-using ReSolverCases
 using ReSolverV2
 
-import ReSolverV2: objective, gradient!, jacobian!
+import ReSolverV2: objective, gradient!, jacobian!, residual!
+
+# Kuramoto–Sivashinsky model of the examples, which depends only on FFTW
+include("../examples/kuramoto_sivashinsky/ks.jl")
 
 Random.seed!(1)
 
-# ---- orthonormal random modes ----
 
-# M modes per wavenumber over the three velocity components, orthonormal in the grid inner product
-# (weights w over the wall-normal points), with ψ(-k) = conj(ψ(k)) on the plane kx = 0 so that
-# the expanded fields are real
-function random_modes(g, M)
-    Ny = size(g, 1)
-    w  = repeat(vec(ReSolverFlowsBase.weights(g)), 3)
-    sz = transform_size(g)
+# ---- problem: KS on L = 22, with a drift along x ----
+g   = KSGrid(22, 15, 15)
+nl  = KSNonlinear(g)
+lin = KSLinearised(g)
+adj = KSLinearised(g; adjoint=true)
 
-    Ψ = ntuple(_ -> zeros(ComplexF64, M, sz...), 3)
+# a random field of unit amplitude, with frequency ω and drift speed c
+random_field() = KSField(g, randn(g.Nx, g.Ns))
+random_orbit(ω, c...) = Orbit(random_field(), [log(ω), c...])
 
-    for I in CartesianIndices(sz[2:end])
-        # orthonormal columns in the weighted inner product: W^(-1/2) Q
-        Q = Matrix(qr(randn(ComplexF64, 3Ny, M)).Q)[:, 1:M] ./ sqrt.(w)
+x = random_orbit(0.4, 0.2)
+F = System(nl, lin, adj, dds!, x; linearise!, ddi=(ddx!,))
 
-        for n in 1:3
-            Ψ[n][:, :, I] .= transpose(Q[(n - 1) * Ny + 1:n * Ny, :])
-        end
-    end
 
-    # Hermitian symmetry on kx = 0: copy each wavenumber to its opposite, conjugated
-    Nz, Nt = sz[3], sz[4]
-    for l in 1:Nz, n in 1:Nt
-        lm = mod(1 - l, Nz) + 1
-        nm = mod(1 - n, Nt) + 1
-        (lm, nm) < (l, n) && continue
-        for c in 1:3
-            if (lm, nm) == (l, n)
-                Ψ[c][:, :, 1, l, n] .= real.(Ψ[c][:, :, 1, l, n])
-            else
-                Ψ[c][:, :, 1, lm, nm] .= conj.(Ψ[c][:, :, 1, l, n])
-            end
-        end
-    end
+@testset "KS model                                                " begin
+    u, v, w = random_field(), random_field(), random_field()
 
-    return Ψ
+    # ---- fields keep their type under broadcasting ----
+    @test u .+ 2 .* v isa KSField
+
+    # ---- spectral derivatives are skew-adjoint ----
+    @test dot(ddx!(similar(u), u), v) ≈ -dot(u, ddx!(similar(v), v))
+    @test dot(dds!(similar(u), u), v) ≈ -dot(u, dds!(similar(v), v))
+
+    # ---- linearised = central difference of nonlinear, exact for a quadratic operator ----
+    linearise!(lin, u)
+    linearise!(adj, u)
+
+    ε  = 1e-3
+    FD = (nl(similar(u), u .+ ε .* v) .- nl(similar(u), u .- ε .* v)) ./ 2ε
+    Lv = lin(similar(u), v)
+
+    @test norm(FD .- Lv) / norm(Lv) < 1e-8
+
+    # ---- the adjoint is exact ----
+    @test dot(w, Lv) ≈ dot(adj(similar(w), w), v)
 end
-
-# random orbit of small amplitude on the modes Ψ, with frequency ω and drift speeds c
-function random_orbit(g, Ψ, ω, c...)
-    a = ProjectedField(g, 1e-1 .* randn(ComplexF64, size(ProjectedField(g, Ψ))), Ψ)
-    return Orbit(a, [ω, c...])
-end
-
-
-# ---- problem: plane Couette flow, one drift direction ----
-g   = ChannelGrid(7, 13, 5; Nt=5, width=5)
-Ψ   = random_modes(g, 4)
-eqs = PlaneCouetteFlow(g, 50; fftw_flags=FFTW.ESTIMATE)
-x   = random_orbit(g, Ψ, 1.3, 0.2)
-F   = System(eqs..., dds!, x; linearise! = linearise_about!, ddi=(ddx1!,))
 
 
 @testset "Orbit                                                   " begin
@@ -71,6 +56,8 @@ F   = System(eqs..., dds!, x; linearise! = linearise_about!, ddi=(ddx1!,))
     @test norm(y .- x) == 0
     @test (2 .* y).p == 2 .* x.p
     @test dot(x, y) ≈ dot(x.a, x.a) + sum(abs2, x.p)
+    @test ReSolverV2.frequency(x) ≈ 0.4
+    @test_throws BoundsError ReSolverV2.drift(x, 0)
 end
 
 
@@ -81,7 +68,7 @@ end
     @test J ≈ objective(F, x)
 
     # ---- directional derivative against central differences ----
-    δ  = random_orbit(g, Ψ, 0.7, -0.3)
+    δ  = random_orbit(0.7, -0.3)
     ε  = 1e-6
     FD = (objective(F, x .+ ε .* δ) - objective(F, x .- ε .* δ)) / 2ε
 
@@ -90,27 +77,82 @@ end
 
 
 @testset "Jacobian                                                " begin
-    δ = random_orbit(g, Ψ, 0.7, -0.3)
+    δ = random_orbit(0.7, -0.3)
 
     F.linearise!(F.lin, x.a)
     Jδ = jacobian!(similar(x), F, x, δ)
 
     # ---- residual part against central differences ----
     ε  = 1e-6
-    rp = copy(ReSolverV2.residual!(similar(x.a), F, x .+ ε .* δ))
-    rm = copy(ReSolverV2.residual!(similar(x.a), F, x .- ε .* δ))
+    rp = residual!(similar(x), F, x .+ ε .* δ)
+    rm = residual!(similar(x), F, x .- ε .* δ)
 
-    @test norm(Jδ.a .- (rp .- rm) ./ 2ε) / norm(Jδ.a) < 1e-6
+    @test norm(Jδ.a .- (rp.a .- rm.a) ./ 2ε) / norm(Jδ.a) < 1e-6
+
+    # ---- phase conditions ----
+    @test Jδ.p[1] ≈ dot(dds!(similar(x.a), x.a), δ.a)
+    @test Jδ.p[2] ≈ dot(ddx!(similar(x.a), x.a), δ.a)
+end
+
+
+@testset "Preconditioner                                          " begin
+    B = KSPreconditioner(x)
+    p = random_orbit(0.7, -0.3)
+    q = random_orbit(0.5, 0.1)
+
+    # ---- B⁻¹ is self-adjoint and positive ----
+    Bp = precondition!(similar(p), B, p)
+    Bq = precondition!(similar(q), B, q)
+
+    @test dot(Bp, q) ≈ dot(p, Bq)
+    @test dot(Bp, p) > 0
+
+    # ---- the complex :jacobian kind: B⁻⁺ is the adjoint of B⁻¹ ----
+    C   = KSPreconditioner(x; kind=:jacobian)
+    Cp  = precondition!(similar(p), C, p)
+    Cᴴq = precondition_adjoint!(similar(q), C, q)
+
+    @test dot(Cp, q) ≈ dot(p, Cᴴq)
+
+    # ---- the identity default divides by one ----
+    @test norm(precondition!(similar(p), I, p) .- p) == 0
 end
 
 
 @testset "solve!                                                  " begin
-    for method in (LBFGS(maxiter=5, verbose=false), NewtonHookstep(maxiter=5, verbose=false))
+    FB = System(nl, lin, adj, dds!, x; linearise!, ddi=(ddx!,), B=KSPreconditioner(x))
+
+    for S in (F, FB), method in (LBFGS(maxiter=5, verbose=false),
+                                 NewtonHookstep(maxiter=3, verbose=false))
         y  = copy(x)
-        J₀ = objective(F, y)
+        J₀ = objective(S, y)
 
-        solve!(y, F, method)
+        solve!(y, S, method)
 
-        @test objective(F, y) < J₀
+        @test objective(S, y) < J₀
     end
+
+    # ---- the callback records the residual and can stop the search ----
+    history = Float64[]
+    solve!(copy(x), F, LBFGS(maxiter=50, verbose=false,
+                             callback=info -> (push!(history, info.res); info.iter == 3)))
+
+    @test length(history) == 4
+    @test issorted(history; rev=true)
+
+    # ---- a trace follows two calls ----
+    trace = Trace()
+    y     = copy(x)
+    solve!(y, FB, LBFGS(maxiter=4, verbose=false, callback=trace))
+    solve!(y, FB, NewtonHookstep(maxiter=2, verbose=false, callback=trace))
+
+    @test trace.iter == [0, 1, 2, 3, 4, 0, 1, 2]
+    @test trace.res[end] ≈ sqrt(2 * objective(FB, y))
+    @test issorted(trace.time)
+
+    # ---- counters grow; Krylov histories only for the hookstep iterations ----
+    @test issorted([e.residual for e in trace.evaluations])
+    @test trace.evaluations[end].jacobian > 0
+    @test trace.evaluations[end].precondition > 0
+    @test all(isempty, trace.krylov[1:6]) && !any(isempty, trace.krylov[7:8])
 end

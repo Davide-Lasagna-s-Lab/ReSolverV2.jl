@@ -5,25 +5,35 @@
 """
     Orbit(a, p)
 
-Unknowns of the search: the space-time field `a`, e.g. the modal coefficients of a
-`ProjectedField`, and the parameter vector
-`p = [ω, c₁, c₂, …]`, the frequency `ω = 2π/T` followed by one drift speed per drift direction of
-the [`System`](@ref). Orbits broadcast like vectors; `dot` adds the inner product of the
-fields to that of the parameters.
+Unknowns of the search: the space-time field `a`, in any discretisation, and the parameter vector
+`p = [log ω, c₁, c₂, …]`, the logarithm of the frequency `ω = 2π/T` followed by one drift speed
+per drift direction of the [`System`](@ref). The frequency is
+searched through its logarithm, which keeps it positive and makes a step a relative change of
+`ω`; [`frequency`](@ref) returns `ω`. Orbits broadcast like vectors; `dot` adds the inner product
+of the fields to that of the parameters.
+
+```julia
+x = Orbit(a, [log(2π/T), c])
+```
 """
 struct Orbit{X, T<:Real}
-    a::X         # space-time field, e.g. modal coefficients
-    p::Vector{T} # frequency ω, then the drift speeds; a vector so that broadcasts write in place
+    a::X         # space-time field
+    p::Vector{T} # log ω, then the drift speeds; a vector so that broadcasts write in place
 
     Orbit(a::X, p::AbstractVector{<:Real}) where {X} =
         new{X, real(eltype(a))}(a, collect(real(eltype(a)), p))
 end
 
-# ---- parameters: p[1] is the frequency, p[2:end] the drift speeds ----
-frequency(x::Orbit) = x.p[1]
+# ---- parameters: p[1] is log ω, p[2:end] the drift speeds ----
+"""
+    frequency(x::Orbit) -> ω
+
+The frequency `ω = 2π/T` of the orbit, from its logarithm `x.p[1]`.
+"""
+frequency(x::Orbit) = exp(x.p[1])
 ndrift(x::Orbit)    = length(x.p) - 1
 
-# the i-th drift speed; i = 0 would silently return the frequency, so the index is checked
+# the i-th drift speed; i = 0 would silently return log ω, so the index is checked
 function drift(x::Orbit, i::Integer)
     1 <= i <= ndrift(x) || throw(BoundsError(x.p[2:end], i))
     return x.p[1 + i]

@@ -28,6 +28,11 @@
 # every Arnoldi step, and the Krylov space stops growing when the residual ‖g - H y‖ of the
 # hookstep falls below `krylov_tol` β, or at dimension `krylov_dim`.
 #
+# Preconditioning. With a preconditioner B the Arnoldi iteration runs on J B⁻¹ and the step is
+# δx = B⁻¹ Qₙ y (right preconditioning): the residual of the model is unchanged, and the trust
+# region ‖y‖ ≤ Δ bounds ‖B δx‖, the length of the step in the metric of B
+# (README, Methodology §4).
+#
 # Trust-region update. The linear model predicts the reduction ½(β² - ‖g - H y‖²) of ½‖r‖²; the
 # step is evaluated by the ratio ρ of the actual reduction to the predicted one:
 #
@@ -39,24 +44,30 @@
 
 """
     NewtonHookstep(; krylov_dim=50, krylov_tol=1e-3, Δ=1e-2, Δmax=1, eta=1e-3,
-                     maxiter=20, tol=1e-10, verbose=true, io=stdout)
+                     maxiter=20, tol=1e-10, verbose=true, io=stdout,
+                     callback=info -> false)
 
 Newton–Krylov hookstep solution of `r = 0`, for [`solve!`](@ref). Krylov spaces grow up to
 dimension `krylov_dim`, or until the hookstep residual is below `krylov_tol` times `‖r‖`; the
 trust-region radius starts at `Δ` and never exceeds `Δmax`; steps are accepted when the actual
-reduction of `½‖r‖²` is at least `eta` times the predicted one. Stops when `‖r‖ < tol` or after
-`maxiter` iterations. Fast near a solution.
+reduction of `½‖r‖²` is at least `eta` times the predicted one. Stops when `‖r‖ < tol`, after
+`maxiter` iterations, or when `callback(info)`, called at the start and after every iteration,
+returns `true`. `info` is a named tuple with the iteration `iter`, the orbit `x`, the residual
+norm `res`, the cumulative `evaluations` of the system and `krylov`, the relative residual of the
+linear model after each Arnoldi step of the iteration. A [`Trace`](@ref) records them. Fast near a
+solution.
 """
-Base.@kwdef struct NewtonHookstep
-    krylov_dim::Int  = 50     # largest dimension of the Krylov space
-    krylov_tol::Real = 1e-3   # relative residual of (3) that stops the Krylov space
-             Δ::Real = 1e-2   # initial trust-region radius
-          Δmax::Real = 1      # largest trust-region radius
-           eta::Real = 1e-3   # smallest ratio of actual to predicted reduction of an accepted step
-       maxiter::Int  = 20     # largest number of Newton iterations
-           tol::Real = 1e-10  # stop when ‖r‖ < tol
-       verbose::Bool = true   # print one line per iteration
-            io::IO   = stdout # where to print
+Base.@kwdef struct NewtonHookstep{CB}
+    krylov_dim::Int  = 50                        # largest dimension of the Krylov space
+    krylov_tol::Real = 1e-3                      # relative residual of (3) stopping the Krylov space
+             Δ::Real = 1e-2                      # initial trust-region radius
+          Δmax::Real = 1                         # largest trust-region radius
+           eta::Real = 1e-3                      # smallest actual/predicted reduction to accept
+       maxiter::Int  = 20                        # largest number of Newton iterations
+           tol::Real = 1e-10                     # stop when ‖r‖ < tol
+       verbose::Bool = true                      # print one line per iteration
+            io::IO   = stdout                    # where to print
+      callback::CB   = info -> false             # called every iteration; true stops
 end
 
 
@@ -67,40 +78,45 @@ function solve!(     x::Orbit,
                      F::System,
                 method::NewtonHookstep)
 
-    (; krylov_dim, krylov_tol, Δmax, eta, maxiter, tol, verbose, io) = method
+    # Δ is the trust-region radius: it starts from the option and changes at every iteration
+    (; krylov_dim, krylov_tol, Δ, Δmax, eta, maxiter, tol, verbose, io, callback) = method
 
     # ---- workspace ----
     b  = similar(x) # right-hand side of (1), (-r, 0): no phase condition on the step
-    δx = similar(x) # Newton step Qₙ y
+    z  = similar(x) # preconditioned step Qₙ y
+    δx = similar(x) # Newton step B⁻¹ Qₙ y
     xn = similar(x) # trial point x + δx
+    w  = similar(x) # B⁻¹ v inside the Arnoldi operator
 
-    # ---- initial residual and trust region ----
+    # ---- initial residual ----
     J = objective(F, x)
-    Δ = method.Δ
 
     verbose && _print_newton_header(io)
-    verbose && _print_newton_row(io, 0, J, frequency(x), Δ, NaN, 0)
+    verbose && _print_newton_row(io, 0, J, frequency(x), Δ, NaN, 0, NaN)
+    stop = callback(_info(0, x, J, F))
 
     for iter in 1:maxiter
-        sqrt(2J) < tol && break
+        (stop || sqrt(2J) < tol) && break
 
         # ---- Newton system (1) at x ----
         # the Jacobian acts about x: set the linearisation point of the operators
         F.linearise!(F.lin, x.a)
 
-        residual!(b.a, F, x)
-        b.a .*= -1
-        fill!(b.p, 0)
+        residual!(b, F, x)
+        b .*= -1
         β = norm(b)
 
         # ---- Krylov space and hookstep (3), one Arnoldi step at a time ----
+        # right preconditioning: the Arnoldi operator is J B⁻¹, and the step δx = B⁻¹ z
         # Arnoldi normalises its starting vector in place, hence the copy of b
-        arn = ArnoldiIteration((out, v) -> jacobian!(out, F, x, v), copy(b))
+        A!  = (out, v) -> jacobian!(out, F, x, _precondition!(w, F, v))
+        arn = ArnoldiIteration(A!, copy(b))
         g   = [β]
 
         H           = arn.H
         y           = zeros(0)
         at_boundary = false
+        krylov      = Float64[] # relative residual of the model after each Arnoldi step
 
         for _ in 1:krylov_dim
             # one more basis vector, one more column of H, one more entry of g
@@ -109,14 +125,19 @@ function solve!(     x::Orbit,
 
             # hookstep in the current space; stop once the linear model is solved well enough
             y, at_boundary = _hookstep(H, g, Δ)
-            norm(g - H * y) < krylov_tol * β && break
+            push!(krylov, norm(g - H * y) / β)
+            krylov[end] < krylov_tol && break
+
+            # breakdown: the new direction lies in the space, which no further step can enlarge
+            H[end, end] <= 1e-12 * β && break
         end
 
         # ---- trust region: accept the step, or shrink Δ and solve (3) again ----
         ρ = 0.0
         while true
             # step in the full space and trial point
-            lincomb!(δx, arn.Q, y)
+            lincomb!(z, arn.Q, y)
+            _precondition!(δx, F, z)
             xn .= x .+ δx
 
             # actual and predicted reductions of ½‖r‖²
@@ -124,8 +145,9 @@ function solve!(     x::Orbit,
             predicted = (β^2 - norm(g - H * y)^2) / 2
             ρ         = (J - Jn) / predicted
 
-            # radius update
-            if ρ < 1/4
+            # radius update; a ratio that is not a number, e.g. from a vanishing predicted
+            # reduction or a residual that overflows, counts as a poor step
+            if !(ρ >= 1/4)
                 Δ /= 4
             elseif ρ > 3/4 && at_boundary
                 Δ = min(2Δ, Δmax)
@@ -143,7 +165,8 @@ function solve!(     x::Orbit,
             y, at_boundary = _hookstep(H, g, Δ)
         end
 
-        verbose && _print_newton_row(io, iter, J, frequency(x), Δ, ρ, size(H, 2))
+        verbose && _print_newton_row(io, iter, J, frequency(x), Δ, ρ, size(H, 2), krylov[end])
+        stop = callback(_info(iter, x, J, F, krylov))
     end
 
     # ---- leave the residual of x in the cache ----
@@ -195,8 +218,9 @@ end
 # ---------------------------------------------------------------------------- #
 # output                                                                       #
 # ---------------------------------------------------------------------------- #
+# krylov: dimension of the Krylov space; linear: relative residual ‖g - H y‖/β of the Newton system
 _print_newton_header(io::IO) =
-    println(io, "  iter      ‖r‖          ω          radius       ρ       krylov")
+    println(io, "  iter      ‖r‖          ω          radius       ρ      krylov    linear")
 
-_print_newton_row(io::IO, iter, J, ω, Δ, ρ, k) =
-    @printf(io, "%6d  %.4e  %.6e  %.3e  %8.3f  %6d\n", iter, sqrt(2J), ω, Δ, ρ, k)
+_print_newton_row(io::IO, iter, J, ω, Δ, ρ, k, lin) =
+    @printf(io, "%6d  %.4e  %.6e  %.3e  %8.3f  %6d  %.2e\n", iter, sqrt(2J), ω, Δ, ρ, k, lin)

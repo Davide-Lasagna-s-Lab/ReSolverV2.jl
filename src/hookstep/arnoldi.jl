@@ -34,9 +34,9 @@ function step!(arn::ArnoldiIteration)
 
     _orthogonalise!(v, Q, view(H, 1:n, n))
 
-    # ---- normalisation ----
+    # ---- normalisation; a zero vector means breakdown: the Krylov space is invariant ----
     H[n + 1, n] = norm(v)
-    v ./= H[n + 1, n]
+    H[n + 1, n] > 0 && (v ./= H[n + 1, n])
     push!(Q, v)
 
     return Q, H
@@ -73,9 +73,10 @@ Arnoldi vectors.
 function lincomb!(out::V,
                     Q::Vector{V},
                     y::AbstractVector) where {V}
-    out .= 0 .* out
-    for (j, yj) in enumerate(y)
-        out .+= yj .* Q[j]
+    # overwrite with the first term: out may hold uninitialised values, even NaN
+    out .= y[1] .* Q[1]
+    for j in 2:length(y)
+        out .+= y[j] .* Q[j]
     end
 
     return out
