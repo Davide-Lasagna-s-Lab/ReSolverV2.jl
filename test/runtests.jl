@@ -3,7 +3,7 @@ using LinearAlgebra
 using Random
 using ReSolverV2
 
-import ReSolverV2: objective, gradient!, jacobian!, residual!
+import ReSolverV2: objective, gradient!, jacobian!, jacobian_adjoint!, residual!
 
 # Kuramoto–Sivashinsky model of the examples, which depends only on FFTW
 include("../examples/kuramoto_sivashinsky/ks.jl")
@@ -116,6 +116,54 @@ end
 
     # ---- the identity default divides by one ----
     @test norm(precondition!(similar(p), I, p) .- p) == 0
+end
+
+
+@testset "Adjoint Jacobian                                        " begin
+    F.linearise!(F.lin, x.a)
+    F.linearise!(F.adj, x.a)
+
+    v = random_orbit(0.7, -0.3)
+    w = random_orbit(0.5, 0.1)
+
+    # ---- ⟨w, 𝒥 v⟩ = ⟨𝒥⁺ w, v⟩, phase conditions and drift included ----
+    Jv  = jacobian!(similar(x), F, x, v)
+    Jᵀw = jacobian_adjoint!(similar(x), F, x, w)
+
+    @test dot(w, Jv) ≈ dot(Jᵀw, v)
+
+    # ---- the gradient of ½‖r‖² is 𝒥⁺ (r, 0) ----
+    g = similar(x)
+    gradient!(g, F, x)
+    r = residual!(similar(x), F, x)
+
+    @test norm(jacobian_adjoint!(similar(x), F, x, r) .- g) / norm(g) < 1e-12
+end
+
+
+@testset "Symmetric subspace                                      " begin
+    # ---- odd! is an orthogonal projection ----
+    u  = random_field()
+    v  = random_field()
+    Pu = odd!(copy(u))
+
+    @test norm(odd!(copy(Pu)) .- Pu) == 0
+    @test dot(Pu, v) ≈ dot(u, odd!(copy(v)))
+
+    # ---- the KS operators preserve the odd fields: an odd orbit has an odd residual ----
+    y  = Orbit(odd!(random_field()), [log(0.4)])
+    Fy = System(nl, lin, adj, dds!, y; linearise!)
+    r  = residual!(similar(y), Fy, y)
+
+    @test norm(odd!(copy(r.a)) .- r.a) / norm(r.a) < 1e-12
+
+    # ---- with the projection, a search from a field that is not odd stays odd ----
+    Fo = System(nl, lin, adj, dds!, y; linearise!, project=odd!)
+    z  = Orbit(y.a .+ 0.1 .* random_field(), copy(y.p))
+
+    solve!(z, Fo, NewtonHookstep(maxiter=3, verbose=false))
+
+    @test norm(odd!(copy(z.a)) .- z.a) == 0
 end
 
 

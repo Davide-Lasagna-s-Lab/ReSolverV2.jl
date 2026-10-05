@@ -44,7 +44,7 @@ solve!(x, F, NewtonHookstep(krylov_dim=150))         # close to it
 The search knows nothing about the system beyond the functions passed to [`System`](@ref):
 
 ```julia
-System(nl, lin, adj, dds!, x; linearise!, ddi=(), B=I)
+System(nl, lin, adj, dds!, x; linearise!, ddi=(), B=I, project=identity)
 ```
 
 With `a` the field of an `Orbit`:
@@ -58,6 +58,7 @@ With `a` the field of an `Orbit`:
 | `dds!` | `dds!(out, a)` | derivative ``\partial_s`` in rescaled time |
 | `ddi` | `dd!(out, a)` for each `dd!` in the tuple | derivative ``\partial_i`` along each drift direction |
 | `B` | `precondition!(out, B, p)`, `precondition_adjoint!(out, B, p)` | apply ``B^{-1}`` and ``B^{-+}`` to an orbit |
+| `project` | `project(a)` | project a field, in place, on a subspace invariant under the operators (see [Symmetric subspaces](#Symmetric-subspaces)) |
 
 All write into `out` and return it. `x` is an orbit of the right shape, used to allocate the
 workspace; its parameter vector fixes the number of drift directions, which must equal
@@ -151,6 +152,85 @@ cases:
   ``\partial_i u = 0``.
 
 See [Search by root finding](@ref) for the phase conditions.
+
+### Symmetric subspaces
+
+Many systems have discrete symmetries besides the translations: the Kuramoto–Sivashinsky equation
+is equivariant under the reflection ``u(x) \to -u(-x)``, plane Couette flow under rotations and
+shift-reflections. The solutions invariant under such a symmetry ``S``, ``S u = u``, form a
+subspace that the dynamics never leaves, and searching for orbits there is often desirable: the
+problem is smaller, the orbits are those of the symmetric subspace studied in the literature, and
+a continuous family of translated copies, which would make the Newton system singular, may be
+excluded. The keyword `project` restricts a search to such a subspace without redefining the field
+type or the operators:
+
+```julia
+F = System(nl, lin, adj, dds!, x; linearise!, B, project=odd!)
+```
+
+where `odd!(a)` overwrites the field `a` with its projection on the subspace,
+``P a = (a + S a)/2``, and returns it. The search then projects the initial orbit, every residual,
+every gradient, every Jacobian action and every application of the preconditioner. The method
+relies on four conditions.
+
+1. **``S`` is an isometry with ``S^2 = I``**, a reflection or a half-period shift for instance, so
+   that ``P = (I + S)/2`` is an orthogonal projection, self-adjoint in the inner product of the
+   fields. Check that `dot(project(copy(a)), b) ≈ dot(a, project(copy(b)))`.
+2. **The system is equivariant**, ``S\,N(u) = N(S u)``, and ``S`` commutes with ``\partial_s``.
+   Then ``N``, ``L\{u\}`` and ``L^+\{u\}`` with ``u`` in the subspace, and ``\partial_s``, map the
+   subspace into itself: residuals, gradients and Jacobian actions of orbits in the subspace stay
+   in it, in exact arithmetic. The projections only remove rounding errors, which would otherwise
+   grow wherever the subspace is unstable. Check that the residual of a symmetric orbit is
+   symmetric, computed without `project`.
+3. **The generators of the continuous symmetries are chosen accordingly.** `dds!` is always
+   passed: ``S`` acts on space only, the time translations of a symmetric orbit are symmetric, and
+   the log-frequency keeps its phase condition. In `ddi` pass exactly the derivatives along the
+   translations that commute with ``S``, whose orbits stay in the subspace; leave out those that
+   anticommute with it, along which the symmetric orbits cannot drift. For odd
+   Kuramoto–Sivashinsky fields, ``S\,\partial_x = -\partial_x S``: ``\partial_x u`` is even, its
+   projection vanishes, and the orbits are periodic, `ddi=()` with `p = [log ω]`. For a flow with a
+   spanwise reflection, the streamwise derivative stays in `ddi` and the spanwise one goes.
+4. **The preconditioner commutes with ``S``**, ideally. If it does not, its output is projected
+   anyway, and the search still stays in the subspace, but the metric of the preconditioner and the
+   symmetry interfere.
+
+**What the package projects, and what the user provides.** The user provides only `project`, the
+orthogonal projection, applied in place to a field; the operators `nl`, `lin`, `adj`, the
+derivatives and the preconditioner are those of the full space and need no change. The package
+applies the projection inside the functions of the [`System`](@ref), so that both methods inherit it:
+
+| quantity | where the projection is applied |
+|---|---|
+| initial orbit | at the start of [`solve!`](@ref), for both methods |
+| residual ``r`` | in `ReSolverV2.residual!` |
+| gradient ``\nabla R = \mathcal{J}^+(r, 0)`` | in `ReSolverV2.gradient!`, through `ReSolverV2.jacobian_adjoint!` |
+| Jacobian actions ``\mathcal{J}\,\delta p`` and ``\mathcal{J}^+ w`` | in `ReSolverV2.jacobian!` and `ReSolverV2.jacobian_adjoint!` |
+| ``B^{-1} p`` and ``B^{-+} p`` | in every application of the preconditioner |
+
+L-BFGS then uses projected gradients, and its directions, combinations of projected gradients,
+preconditioned vectors and curvature pairs, stay in the subspace; the hookstep builds its Krylov
+basis from the projected residual with projected Jacobian actions. The parameters of the orbit,
+frequency and drift speeds, are not affected. If the operators are equivariant, the projections only
+remove rounding errors. If they are not, the search solves the projected equations ``P r = 0`` on
+the subspace, a Galerkin approximation, whose solutions are not orbits of the full system.
+
+In summary, for Kuramoto–Sivashinsky:
+
+| search | orbit parameters | `ddi` | `project` | Newton system |
+|---|---|---|---|---|
+| relative periodic orbit, full space | `[log ω, c]` | `(ddx!,)` | `identity` | ``N_u + 2`` unknowns |
+| periodic orbit, odd subspace | `[log ω]` | `()` | `odd!` | ``\dim V + 1`` unknowns, ``\dim V \approx N_u/2`` |
+
+with `dds!` passed in both; the change of the block system is derived in
+[Symmetric subspaces](theory/root_finding.md#Symmetric-subspaces) of the theory.
+
+The projected search works with fields of the full size: it saves neither memory nor operations
+per action, unlike a discretisation that represents only the symmetric fields, a sine series for
+odd fields for instance. What it saves is the work of the solvers. The Krylov spaces contain only
+symmetric fields, the neutral directions of the symmetries that the subspace excludes never enter
+the Newton system, and the converged orbit is exactly symmetric. The example
+[Kuramoto–Sivashinsky in the odd subspace](@ref) compares the projected search with searches in
+the full space.
 
 ## Preconditioners
 
@@ -273,7 +353,7 @@ The argument is a named tuple `info` with:
 | `iter` | the iteration number of the method, `0` before the first iteration |
 | `x` | the current orbit, after the accepted step |
 | `res` | the residual norm ``\lVert r\rVert`` at `x` |
-| `evaluations` | cumulative numbers of residuals, gradients, Jacobian actions and preconditioner applications of the system, as a named tuple `(residual, gradient, jacobian, precondition)` |
+| `evaluations` | cumulative numbers of residuals, gradients, Jacobian actions, adjoint Jacobian actions and preconditioner applications of the system, as a named tuple `(residual, gradient, jacobian, adjoint, precondition)` |
 | `krylov` | for the hookstep, the relative residual of the Newton system ``\lVert g - Hy\rVert/\beta`` after each Arnoldi step of the iteration; empty for L-BFGS and at `iter = 0` |
 | `step` | for the hookstep, `"newton"` if the accepted step is the full Newton step, inside the trust region, `"hook"` if it lies on its boundary; empty for L-BFGS and at `iter = 0` |
 

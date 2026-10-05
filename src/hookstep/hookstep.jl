@@ -33,8 +33,8 @@
 #
 # Preconditioning. With a preconditioner B the Arnoldi iteration runs on 𝒥 B⁻¹ and the step is
 # δx = B⁻¹ Qₙ y (right preconditioning): the residual of the model is unchanged, and the trust
-# region ‖y‖ ≤ Δ bounds ‖B δx‖, the length of the step in the metric of B
-# (README, Methodology §4).
+# region ‖y‖ ≤ Δ bounds ‖B δx‖, the length of the step in the metric of B (see the Preconditioning
+# page of the documentation).
 #
 # Trust-region update. The linear model predicts the reduction ½(β² - ‖g - H y‖²) of ½‖r‖²; the
 # step is evaluated by the ratio ρ of the actual reduction to the predicted one:
@@ -46,6 +46,10 @@
 #
 # The output reports, for every iteration, whether the accepted step is the full Newton step, inside
 # the trust region, or a hookstep on its boundary, and how many trial steps were rejected first.
+#
+# Symmetric subspaces. With a projection in the System (keyword `project`), the System projects the
+# initial orbit, the residual, every Jacobian action and every application of B⁻¹, so the Arnoldi
+# basis, the step and the iterates stay in the subspace; nothing is projected here.
 
 
 """
@@ -96,7 +100,8 @@ function solve!(     x::Orbit,
     xn = similar(x) # trial point x + δx
     w  = similar(x) # B⁻¹ v inside the Arnoldi operator
 
-    # ---- initial residual ----
+    # ---- initial residual, on the invariant subspace of the system ----
+    F.project(x.a)
     R = objective(F, x)
 
     verbose && _print_newton_header(io)

@@ -125,6 +125,70 @@ subspace that a translation would leave, as the odd solutions ``u(-x) = -u(x)`` 
 Kuramoto–Sivashinsky equation, ``\partial_i u`` has no component in that subspace: its row and
 column of ``\mathcal{J}`` vanish and the system is singular. Such directions are left out of `ddi`.
 
+## Symmetric subspaces
+
+Let ``S`` be a discrete symmetry of the problem, a reflection or a half-period shift for instance:
+an isometry with ``S^2 = I``, acting on space only, under which the equation is equivariant,
+``S\,N(u) = N(S u)``. The orbits whose field is fixed by ``S`` form a subspace ``V``, and
+``P = (I + S)/2`` is the orthogonal projection on its fields. If the current orbit lies in ``V``,
+then ``L\{u\}`` commutes with ``S``, and ``A`` maps the fields of ``V`` into themselves.
+
+**Which generators survive.** The columns and phase conditions of (4) involve the generators of the
+continuous symmetries, ``\partial_s u`` and ``\partial_i u``, and their fate in ``V`` decides the shape
+of the restricted system.
+
+- *Time.* ``S`` acts on space only, so it commutes with ``\partial_s``: ``\partial_s u`` lies in ``V``.
+  The time translations of a symmetric orbit are symmetric orbits, ``\partial_s u`` is still a
+  neutral direction of the restricted problem, and the log-frequency with its phase condition stays:
+  `dds!` is always needed.
+- *A translation that commutes with ``S``*, ``S\,\partial_i = \partial_i S``, such as a streamwise
+  translation under a spanwise reflection: ``\partial_i u`` lies in ``V``, the translated orbits stay
+  in ``V``, and the drift speed with its phase condition stays: ``\partial_i`` belongs in `ddi`.
+- *A translation that anticommutes with ``S``*, ``S\,\partial_i = -\partial_i S``, such as the
+  translation along the axis of the reflection itself: ``\partial_i u`` lies in the orthogonal
+  complement of ``V``, ``P\,\partial_i u = 0``. The translated orbits leave ``V``, the symmetric orbits
+  cannot drift in that direction, and ``\partial_i`` must be left out of `ddi`.
+
+**The restricted system.** For the odd Kuramoto–Sivashinsky orbits, ``S u(x) = -u(-x)`` anticommutes
+with ``\partial_x``. In the full space the Newton system of a relative periodic orbit is
+
+```math
+\begin{bmatrix}
+A                                  & \omega\,\partial_s u & -\partial_x u \\
+\langle \partial_s u, \cdot\,\rangle & 0                    & 0             \\
+\langle \partial_x u, \cdot\,\rangle & 0                    & 0
+\end{bmatrix}
+\begin{bmatrix} \delta u \\ \delta\rho \\ \delta c \end{bmatrix}
+= -\begin{bmatrix} r \\ 0 \\ 0 \end{bmatrix} ,
+```
+
+of size ``N_u + 2``. Restricted to the odd fields, with ``\delta u = P\,\delta u``, the column
+``-\partial_x u`` and the row ``\langle \partial_x u, \cdot\,\rangle`` vanish, since ``\partial_x u`` is
+even, and the system becomes that of a periodic orbit,
+
+```math
+\begin{bmatrix}
+P A P                              & \omega\,\partial_s u \\
+\langle \partial_s u, \cdot\,\rangle & 0
+\end{bmatrix}
+\begin{bmatrix} \delta u \\ \delta\rho \end{bmatrix}
+= -\begin{bmatrix} r \\ 0 \end{bmatrix} , \qquad \delta u \in V ,
+```
+
+of size ``\dim V + 1``, about half. It is nonsingular although ``A`` is singular on the full space:
+its null vector ``\partial_x u`` is not in ``V``, so the translation needs neither a drift speed nor
+a phase condition. In the code this is `System(...; ddi=(), project=odd!)` with an orbit carrying the
+log-frequency only, against `ddi=(ddx!,)` and a drift speed in the full space.
+
+**How the code restricts the system.** The right-hand side ``-(r, 0)`` lies in ``V``, and so does the
+image of ``V`` under every block, so the Krylov spaces built from it, and the Newton step, never
+leave ``V``: GMRES solves the restricted system without ever forming ``P A P``. In floating point,
+rounding errors put components outside ``V`` into the Krylov basis, and the nearly singular
+directions of ``A`` outside ``V``, the translation above, amplify them: the orbit drifts out of the
+subspace, and the Krylov spaces grow to resolve directions that play no role. The orthogonal
+projection on ``V``, applied after every operator (the keyword `project` of [`System`](@ref)),
+removes these components as they appear.
+
 ## Krylov space
 
 **Only actions are available.** The operator ``\mathcal{J}`` acts on orbits, whose dimension is the

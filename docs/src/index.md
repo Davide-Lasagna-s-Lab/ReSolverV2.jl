@@ -46,6 +46,8 @@ satisfying the equation. Two methods are implemented in this package to drive th
   such as the Kuramoto–Sivashinsky equation, or a large flow solver, in any discretisation.
 - **Relative periodic orbits.** Drift speeds along any set of symmetry directions are unknowns of
   the search, with the phase conditions that make the Newton system square.
+- **Symmetric subspaces.** A projection, given as one function, restricts the search to the
+  solutions fixed by a discrete symmetry, without redefining the fields or the operators.
 - **Preconditioning.** A preconditioner changes the metric in which both methods work, through a
   two-function interface; the examples show that it decides whether the search converges at all.
 - **Tracing.** A [`Trace`](@ref) records the residual, the parameters, the evaluations of the
@@ -136,7 +138,8 @@ Jacobian actions of the preconditioned Krylov solver does not grow with the reso
 Pages = ["usage.md",
          "theory/formulation.md", "theory/optimisation.md", "theory/root_finding.md",
          "theory/preconditioning.md",
-         "examples/lorenz.md", "examples/kuramoto_sivashinsky.md", "examples/methods.md",
+         "examples/lorenz.md", "examples/kuramoto_sivashinsky.md", "examples/ks_symmetric.md",
+         "examples/methods.md",
          "api.md"]
 Depth = 1
 ```
@@ -144,5 +147,5 @@ Depth = 1
 ## A note on how this package was written
 
 This package was written with AI assistance (Claude, by Anthropic). Developing it would have taken
-me about two months, with a great deal of reasoning, manual derivations and reading. Claude did it
+me about two weeks, with a great deal of reasoning, manual derivations and reading. Claude did it
 in a day. — Davide Lasagna

@@ -3,8 +3,8 @@
 #
 #     julia --project=examples examples/kuramoto_sivashinsky/preconditioners.jl
 #
-# writes preconditioners.png next to this file. Five choices of B are compared, all diagonal in
-# Fourier, with multipliers on the mode (k, n):
+# writes preconditioners.png in the folder figures/ next to this file. Five choices of B are
+# compared, all diagonal in Fourier, with multipliers on the mode (k, n):
 #
 #     none        1
 #     frequency   1 + |ω₀ n - c₀ k|, the time derivative in the moving frame
@@ -211,4 +211,4 @@ for (j, kind) in enumerate(kinds)
     scatter!(ax, real.(λ), imag.(λ); color=colors[kind], markersize=7)
 end
 
-save(joinpath(@__DIR__, "preconditioners.png"), fig)
+save(joinpath(@__DIR__, "figures", "preconditioners.png"), fig)

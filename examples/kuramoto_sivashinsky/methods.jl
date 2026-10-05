@@ -3,7 +3,7 @@
 #
 #     julia --project=examples examples/kuramoto_sivashinsky/methods.jl
 #
-# writes methods.png, memory.png and hybrid.png next to this file.
+# writes methods.png, memory.png and hybrid.png in the folder figures/ next to this file.
 #
 # The cost of the two methods is compared in operator applications, one nonlinear, linearised or
 # adjoint operator each, and in wall-clock time. The first measure is fair only if the three
@@ -285,7 +285,7 @@ for (row, (sname, _, tol, _)) in enumerate(starts)
     row == 1 && axislegend(ax1; position=:lb)
 end
 
-save(joinpath(@__DIR__, "methods.png"), fig)
+save(joinpath(@__DIR__, "figures", "methods.png"), fig)
 
 # ---- memory.png: residual against time for each budget, and the cost against the budget ----
 fig = Figure(size=(1300, 420), fontsize=13)
@@ -326,7 +326,7 @@ decades!(ax, ys; axis=:y)
 # the lower left corner is empty: no method reaches the tolerance with the smallest budgets fast
 axislegend(ax; position=:lb)
 
-save(joinpath(@__DIR__, "memory.png"), fig)
+save(joinpath(@__DIR__, "figures", "memory.png"), fig)
 
 # ---- hybrid.png: far start on the base grid, L-BFGS, hookstep and the hybrid ----
 fig  = Figure(size=(1100, 430), fontsize=13)
@@ -358,4 +358,4 @@ decades!(ax1, [rs; tol]; axis=:y); decades!(ax2, [rs; tol]; axis=:y)
 linkyaxes!(ax1, ax2)
 Legend(fig[1, 3], ax1; labelsize=11, framevisible=false)
 
-save(joinpath(@__DIR__, "hybrid.png"), fig)
+save(joinpath(@__DIR__, "figures", "hybrid.png"), fig)

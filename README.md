@@ -26,8 +26,9 @@ are implemented in this package to drive the residual to zero:
 
 The search knows nothing about the system beyond a handful of functions supplied by the user: the
 nonlinear operator, its linearisation and adjoint, and the derivatives in rescaled time and along the
-drift directions. An optional preconditioner changes the metric in which both methods work, and a
-`Trace` records the history of a search. The package depends only on the Julia standard library.
+drift directions. An optional preconditioner changes the metric in which both methods work, an
+optional projection restricts the search to a symmetric subspace, and a `Trace` records the history
+of a search. The package depends only on the Julia standard library.
 
 ## Installation
 
@@ -58,7 +59,7 @@ F = System(KSNonlinear(g), KSLinearised(g), KSLinearised(g; adjoint=true), dds!,
 solve!(x, F, NewtonHookstep(maxiter=50, krylov_dim=150, Δ=0.1, Δmax=10))
 ```
 
-![Shortest pre-periodic orbit of Kuramoto–Sivashinsky on L = 22](examples/kuramoto_sivashinsky/example.png)
+![Shortest pre-periodic orbit of Kuramoto–Sivashinsky on L = 22](examples/kuramoto_sivashinsky/figures/example.png)
 
 Top: the initial guess and the converged orbit. Middle and bottom: the search without and with the
 preconditioner; left, the residual against the Newton iterations, hooksteps open and full Newton
@@ -75,7 +76,7 @@ julia --project=examples examples/lorenz/example.jl
 ## A note on how this package was written
 
 This package was written with AI assistance (Claude, by Anthropic). Developing it would have taken
-me about two months, with a great deal of reasoning, manual derivations and reading. Claude did it
+me about two weeks, with a great deal of reasoning, manual derivations and reading. Claude did it
 in a day. — Davide Lasagna
 
 ## License

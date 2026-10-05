@@ -2,7 +2,8 @@
 #
 #     julia --project=docs docs/make.jl
 #
-# The figures are produced by the scripts in examples/ and copied into docs/src/assets.
+# The figures are produced by the scripts in examples/, in their figures/ folders, and copied into
+# docs/src/assets.
 
 using Documenter
 using ReSolverV2
@@ -12,7 +13,7 @@ assets = joinpath(@__DIR__, "src", "assets")
 mkpath(assets)
 
 for (folder, prefix) in (("kuramoto_sivashinsky", "ks"), ("lorenz", "lorenz"), ("metric", "metric"))
-    dir = joinpath(@__DIR__, "..", "examples", folder)
+    dir = joinpath(@__DIR__, "..", "examples", folder, "figures")
     for file in filter(endswith(".png"), readdir(dir))
         cp(joinpath(dir, file), joinpath(assets, "$(prefix)_$(file)"); force=true)
     end
@@ -34,6 +35,7 @@ makedocs(sitename = "ReSolverV2.jl",
                                     "theory/preconditioning.md"],
                      "Examples" => ["examples/lorenz.md",
                                     "examples/kuramoto_sivashinsky.md",
+                                    "examples/ks_symmetric.md",
                                     "examples/methods.md"],
                      "API"      => "api.md"],
          checkdocs = :exports,

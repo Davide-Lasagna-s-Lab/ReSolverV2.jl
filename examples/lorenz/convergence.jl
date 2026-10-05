@@ -3,10 +3,10 @@
 #
 #     julia --project=examples examples/lorenz/convergence.jl
 #
-# writes convergence.png and tolerance.png next to this file. The orbit is first converged with
-# K = 20 modes; it is then resampled to K = 10, 20, 40 and 80 modes, its log-frequency perturbed by
-# 0.01 and its field by 1% on the lowest modes, so that every search starts close to the solution
-# with a residual spread over many directions.
+# writes convergence.png and tolerance.png in the folder figures/ next to this file. The orbit is
+# first converged with K = 20 modes; it is then resampled to K = 10, 20, 40 and 80 modes, its
+# log-frequency perturbed by 0.01 and its field by 1% on the lowest modes, so that every search
+# starts close to the solution with a residual spread over many directions.
 #
 # convergence.png: searches with the Newton system solved to a relative residual of 10⁻³, showing
 # the residual against the Newton iterations, the Jacobian actions and the computing time, and the
@@ -195,7 +195,7 @@ Legend(fig[3, 1:3],
        [["K = $K" for K in Ks]; collect(keys(style))];
        orientation=:horizontal, framevisible=false)
 
-save(joinpath(@__DIR__, "convergence.png"), fig)
+save(joinpath(@__DIR__, "figures", "convergence.png"), fig)
 
 
 # ============================================================================ #
@@ -240,4 +240,4 @@ Legend(fig[2, 1:3],
        [["K = $K" for K in Ks]; collect(keys(style))];
        orientation=:horizontal, framevisible=false)
 
-save(joinpath(@__DIR__, "tolerance.png"), fig)
+save(joinpath(@__DIR__, "figures", "tolerance.png"), fig)

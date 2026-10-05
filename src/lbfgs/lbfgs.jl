@@ -6,8 +6,14 @@
 # direction is not a descent direction, steepest descent is used instead.
 #
 # With a preconditioner B the recursion works in the metric M = B⁺B: the initial inverse Hessian is
-# θ M⁻¹ instead of θ I, and steepest descent is -M⁻¹ g (README, Methodology §4). With
-# B = I both reduce to the plain recursion.
+# θ M⁻¹ instead of θ I, and steepest descent is -M⁻¹ g (see the Preconditioning page of the
+# documentation). With B = I both reduce to the plain recursion.
+#
+# With a projection on a symmetric subspace in the System (keyword `project`), nothing is projected
+# here: the System projects the initial orbit, every gradient (gradient!, as 𝒥⁺ applied to the
+# residual) and every application of B⁻¹ and B⁻⁺. The recursion only combines these vectors and the
+# curvature pairs, differences of iterates and of gradients, so every direction and every iterate
+# stays in the subspace.
 
 const CAUTIOUS     = 1e-10      # smallest relative curvature ⟨y, s⟩ / (‖s‖‖y‖) of a kept pair
 const SCALE_BOUNDS = (1e-8, 1e8) # bounds of the initial scaling θ = ⟨y, s⟩ / ⟨y, M⁻¹ y⟩
@@ -133,7 +139,8 @@ function solve!(     x::Orbit,
     s   = similar(x) # step
     y   = similar(x) # gradient change
 
-    # ---- initial point ----
+    # ---- initial point, on the invariant subspace of the system ----
+    F.project(x.a)
     R = gradient!(g, F, x)
     α = 0.0
 

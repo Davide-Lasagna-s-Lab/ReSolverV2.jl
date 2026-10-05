@@ -20,6 +20,7 @@
 #     KSNonlinear, KSLinearised        N(u), its linearisation and adjoint
 #     linearise!(op, u)                linearisation point of KSLinearised
 #     KSPreconditioner                 diagonal Fourier preconditioner
+#     odd!(u)                          projection on the odd fields, u(-x) = -u(x)
 #     resample(u, g)                   spectral interpolation to another grid
 #     integrate, recurrence            time integration (ETDRK4) and near-recurrences
 
@@ -338,6 +339,30 @@ end
 
 
 # ============================================================================ #
+# Symmetry                                                                     #
+# ============================================================================ #
+
+# Projection on the odd fields, u(-x, s) = -u(x, s): the fields fixed by the reflection
+# u(x) → -u(-x), under which the KS equation is equivariant, (P u)(x) = (u(x) - u(-x))/2. On the
+# grid x_j = (j - 1) L/Nx the reflection maps the point j to j′ = Nx - j + 2, modulo Nx, and fixes
+# x = 0, where P u vanishes. P is an orthogonal projection in the inner product of the fields.
+function odd!(u::KSField)
+    Nx = u.g.Nx
+
+    for l in axes(u.data, 2), j in 1:(Nx + 1) ÷ 2
+        j′ = mod(Nx - j + 1, Nx) + 1
+        a  = u.data[j, l]
+        b  = u.data[j′, l]
+
+        u.data[j, l]  = (a - b) / 2
+        u.data[j′, l] = (b - a) / 2
+    end
+
+    return u
+end
+
+
+# ============================================================================ #
 # Resolution                                                                   #
 # ============================================================================ #
 
@@ -364,8 +389,11 @@ end
 
 # Integrate a snapshot u₀ (a vector on the points along x) for nsteps steps of size dt with ETDRK4
 # (Kassam & Trefethen 2005), returning the snapshots every `every` steps as the columns of a
-# matrix, the first being u₀.
-function integrate(u₀::AbstractVector, g::KSGrid, dt::Real, nsteps::Int; every::Int=1)
+# matrix, the first being u₀. With odd=true the solution is kept odd, u(-x) = -u(x), by removing at
+# every step the cosine part of the Fourier coefficients, which rounding errors create and an
+# instability of the odd subspace would amplify.
+function integrate(u₀::AbstractVector, g::KSGrid, dt::Real, nsteps::Int; every::Int=1,
+                   odd::Bool=false)
 
     # ---- ETDRK4 coefficients, by contour integrals on 32 points ----
     E  = exp.(dt .* g.λ)
@@ -395,6 +423,9 @@ function integrate(u₀::AbstractVector, g::KSGrid, dt::Real, nsteps::Int; every
         ĉ  = E2 .* â .+ Q .* (2 .* Nb .- Nv)
         Nc = Nl(ĉ)
         v̂  = E .* v̂ .+ f1 .* Nv .+ 2 .* f2 .* (Na .+ Nb) .+ f3 .* Nc
+
+        # odd fields have purely imaginary coefficients, a sine series
+        odd && (v̂ .= im .* imag.(v̂))
 
         i % every == 0 && (out[:, i ÷ every + 1] .= irfft(v̂, g.Nx))
     end

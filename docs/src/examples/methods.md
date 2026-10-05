@@ -34,9 +34,9 @@ the same, which depends on their implementation, not on the methods. The scripts
 
 | system | ``N`` | ``L`` | ``L^+`` | residual | gradient | Jacobian action | ``B^{-1}`` |
 |---|---|---|---|---|---|---|---|
-| Lorenz, ``K = 40`` | 45.5 | 43.7 | 43.8 | 46.0 | 115.1 | 46.9 | 4.7 |
-| KS, ``33 \times 49`` | 16.9 | 17.0 | 23.0 | 44.5 | 120.1 | 71.1 | 14.4 |
-| KS, ``129 \times 193`` | 1 307 | 1 309 | 1 765 | 3 125 | 8 704 | 6 405 | 927 |
+| Lorenz, ``K = 40`` | 50.6 | 43.9 | 46.2 | 48.3 | 115.3 | 45.8 | 4.6 |
+| KS, ``33 \times 49`` | 16.9 | 16.8 | 22.8 | 44.5 | 122.9 | 71.5 | 14.3 |
+| KS, ``129 \times 193`` | 1 309 | 1 310 | 1 767 | 3 133 | 8 659 | 5 091 | 926 |
 
 *Times in μs per call. Residual, gradient and Jacobian action are the functions of the package,
 which add the derivatives, the inner products and, for the gradient, a residual and a linearisation
@@ -95,7 +95,7 @@ searches. Dashed: the tolerance ``10^{-6}``.*
 |---|---|---|---|
 | far, ``33 \times 49`` | 2 949 | not reached (``1.6 \times 10^{-6}`` after ``2 \times 10^{5}``) | 411 |
 | close, ``33 \times 49`` | 1 232 | 3 208 | 100 |
-| far, ``129 \times 193`` | 2 982 | not reached (``1.4 \times 10^{-4}`` after 60 s) | 411 |
+| far, ``129 \times 193`` | 2 982 | not reached (``2.2 \times 10^{-5}`` after 60 s) | 411 |
 | close, ``129 \times 193`` | 1 305 | 2 949 | 100 |
 
 *Operator applications to ``\lVert r\rVert < 10^{-6}``.*
@@ -104,11 +104,11 @@ Counted in operator applications the hookstep is the cheaper method in all four 
 times cheaper than the better L-BFGS from the far start, twelve times from the close one. For both
 methods the count does not depend on the resolution: the two grids differ by a few percent, the
 mark of a preconditioner that captures the stiffness of the problem at every scale. In wall-clock
-time the advantage of the hookstep is smaller on the base grid, 0.10 s against 0.32 s from the far
+time the advantage of the hookstep is smaller on the base grid, 0.10 s against 0.29 s from the far
 start, because there the operators are cheap and the dense linear algebra of the hookstep, the
 Hessenberg least-squares problems and the orthogonalisation of the Krylov basis, is not negligible;
 on the fine grid, where the operators dominate, the ratio of times approaches that of the counts,
-3.9 s against 20.8 s.
+3.6 s against 21.3 s.
 
 The two preconditioners of L-BFGS behave very differently. With the linear one L-BFGS converges at a
 steady rate. With the jacobian one it is slower from the close start, by a factor of 2.3 to 2.6, and

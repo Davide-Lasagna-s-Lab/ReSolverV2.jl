@@ -239,13 +239,13 @@ jacobian preconditioner, but the reason is the same: with Newton converging in 3
 tighter inner solve buys nothing, and a looser one multiplies the iterations.
 
 The computing time tells a different story on the smallest grids. On the base grid the fastest
-searches use loose tolerances, ``\tau`` between 0.6 and 0.9, at about 0.3 s against 1.4 s at
+searches use loose tolerances, ``\tau`` between 0.3 and 0.7, at about 0.22 s against 0.52 s at
 ``10^{-3}``: with 1 619 unknowns a Jacobian action is cheap, and the time is dominated by the
 orthogonalisation of the Arnoldi vectors, whose cost grows with the square of the dimension of the
 Krylov space, and by the dense linear algebra of the hookstep. Many short Krylov spaces are then
 cheaper than a few long ones. As the grid is refined, the Jacobian actions become dominant and the
 minimum of the time moves to the minimum of the actions: on the finest grid the fastest searches use
-``\tau = 10^{-2}`` and ``10^{-3}``, 28 and 32 s, against 107 s at ``\tau = 0.9``. For large problems,
+``\tau = 10^{-2}`` and ``10^{-3}``, 25 and 26 s, against 92 s at ``\tau = 0.9``. For large problems,
 where the Jacobian action is the expensive operation, the count of actions is the relevant measure,
 and a tolerance between ``10^{-2}`` and ``10^{-4}`` is a safe choice.
 

@@ -2,8 +2,8 @@
 #
 #     ⟨p, q⟩_B = ⟨B p, B q⟩ = ⟨p, M q⟩,     M = B⁺ B,
 #
-# in which both methods work (README, Methodology §4). L-BFGS applies M⁻¹ = B⁻¹ B⁻⁺, the
-# hookstep B⁻¹ as a right preconditioner. The search only applies the inverses, through two
+# in which both methods work (see the Preconditioning page of the documentation). L-BFGS applies
+# M⁻¹ = B⁻¹ B⁻⁺, the hookstep B⁻¹ as a right preconditioner. The search only applies the inverses, through two
 # functions that a preconditioner type extends:
 #
 #     precondition!(out, B, p)            out = B⁻¹ p
@@ -27,15 +27,22 @@ the inner product of the orbits. For a self-adjoint `B` it is [`precondition!`](
 """
 precondition_adjoint!(out::Orbit, B::UniformScaling, p::Orbit) = (out .= p ./ conj(B.λ))
 
-# applications of B⁻¹ and B⁻⁺ through a System, counted
+# applications of B⁻¹ and B⁻⁺ through a System, counted, and projected back onto the invariant
+# subspace of the System, which a preconditioner that does not commute with the symmetry would leave
 function _precondition!(out::Orbit, F, p::Orbit)
     F.evaluations.precondition += 1
-    return precondition!(out, F.B, p)
+    precondition!(out, F.B, p)
+    F.project(out.a)
+
+    return out
 end
 
 function _precondition_adjoint!(out::Orbit, F, p::Orbit)
     F.evaluations.precondition += 1
-    return precondition_adjoint!(out, F.B, p)
+    precondition_adjoint!(out, F.B, p)
+    F.project(out.a)
+
+    return out
 end
 
 # out = M⁻¹ p = B⁻¹ B⁻⁺ p, with tmp as scratch

@@ -38,4 +38,5 @@ ReSolverV2.residual!
 ReSolverV2.objective
 ReSolverV2.gradient!
 ReSolverV2.jacobian!
+ReSolverV2.jacobian_adjoint!
 ```

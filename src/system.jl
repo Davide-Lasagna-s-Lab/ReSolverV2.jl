@@ -5,6 +5,7 @@
 #     objective   R = ½‖r‖²                                   both methods
 #     gradient    ∇R, from the adjoint operator                L-BFGS
 #     jacobian    𝒥 δx, from the linearised operator           Newton–Krylov hookstep
+#     adjoint     𝒥⁺ w, from the adjoint operator              least-squares Krylov solvers
 #
 # With x = (a, ρ, c), ρ = log ω the unknown for the frequency, and ∂ᵢ the derivative along the
 # i-th drift direction,
@@ -25,6 +26,7 @@
 #     dds!(out, a)             derivative along the rescaled time s ∈ [0, 2π)
 #     dd!(out, a)              derivative along a drift direction, one function per direction
 #     B                        preconditioner, optional (precondition.jl)
+#     project(a)               projection on an invariant subspace, in place, optional
 #
 # All write into `out`, of the type of `a`, and return it; the derivatives must be skew-adjoint in
 # `dot`, ⟨∂a, b⟩ = -⟨a, ∂b⟩, as Fourier derivatives are. The fields broadcast and support `dot`
@@ -34,25 +36,34 @@
 # the neutral directions of time and space translations,
 #
 #     ⟨∂s a, δa⟩ = 0,    ⟨∂ᵢ a, δa⟩ = 0.
+#
+# Symmetric subspaces. If the system is equivariant under a symmetry S, an isometry with S² = I,
+# its fixed fields Fix(S) = {a : S a = a} form a subspace that the operators map into itself: an
+# orbit, its residual, its gradient and the Jacobian actions on fields of Fix(S) stay in Fix(S).
+# The search then never leaves the subspace, except by rounding errors, which the orthogonal
+# projection P = (I + S)/2, given as `project`, removes: it is applied to the initial orbit, to
+# every residual, gradient and Jacobian action, and to every application of the preconditioner.
 
 # Number of evaluations made through a System, cumulative over its lifetime.
 mutable struct Evaluations
         residual::Int # residuals, one nonlinear operator each
         gradient::Int # gradients, one adjoint operator each
         jacobian::Int # Jacobian actions, one linearised operator each
+         adjoint::Int # adjoint Jacobian actions, one adjoint operator each
     precondition::Int # applications of B⁻¹ or B⁻⁺
 
-    Evaluations() = new(0, 0, 0, 0)
+    Evaluations() = new(0, 0, 0, 0, 0)
 end
 
 # a snapshot of the counters, as a named tuple
 counts(e::Evaluations) = (residual     = e.residual,
                           gradient     = e.gradient,
                           jacobian     = e.jacobian,
+                          adjoint      = e.adjoint,
                           precondition = e.precondition)
 
 """
-    System(nl, lin, adj, dds!, x::Orbit; linearise!, ddi=(), B=I)
+    System(nl, lin, adj, dds!, x::Orbit; linearise!, ddi=(), B=I, project=identity)
 
 The system with nonlinear, linearised and adjoint operators `nl`, `lin` and `adj`, rescaled-time
 derivative `dds!` and function `linearise!(op, a)` setting the linearisation point of `lin` or
@@ -71,8 +82,14 @@ of the problem forbids drifting.
 `B` is the preconditioner, an invertible operator on orbits for which
 [`precondition!`](@ref) and [`precondition_adjoint!`](@ref) are defined; the identity `I` by
 default.
+
+`project(a) -> a` restricts the search to a subspace of fields invariant under the operators, the
+fields fixed by a symmetry of the problem: it projects the field `a` in place, orthogonally, onto
+the subspace. It is applied to the initial orbit, and to every residual, gradient, Jacobian action
+and application of the preconditioner, so that the search stays in the subspace despite rounding
+errors. The default `identity` does nothing.
 """
-struct System{NL, LIN, ADJ, DS, DD, LN, PB, X, O<:Orbit}
+struct System{NL, LIN, ADJ, DS, DD, LN, PB, PR, X, O<:Orbit}
             nl::NL           # nonlinear operator N(a)
            lin::LIN          # linearised operator L b, about the linearisation point
            adj::ADJ          # adjoint operator L⁺ b, about the same point
@@ -80,6 +97,7 @@ struct System{NL, LIN, ADJ, DS, DD, LN, PB, X, O<:Orbit}
            ddi::DD           # derivatives along the drift directions
     linearise!::LN           # sets the linearisation point of lin or adj
              B::PB           # preconditioner
+       project::PR           # projection on an invariant subspace, in place
          cache::NTuple{2, X} # scratch fields
       residual::O            # residual of the last call to objective
    evaluations::Evaluations  # counters of the evaluations
@@ -91,7 +109,8 @@ struct System{NL, LIN, ADJ, DS, DD, LN, PB, X, O<:Orbit}
                              x::Orbit;
                     linearise!,
                            ddi::Tuple=(),
-                             B=I)
+                             B=I,
+                       project=identity)
 
         # ---- input checks ----
         length(ddi) == ndrift(x) ||
@@ -108,6 +127,7 @@ struct System{NL, LIN, ADJ, DS, DD, LN, PB, X, O<:Orbit}
                    typeof(ddi),
                    typeof(linearise!),
                    typeof(B),
+                   typeof(project),
                    typeof(x.a),
                    typeof(x)}(nl,
                               lin,
@@ -116,6 +136,7 @@ struct System{NL, LIN, ADJ, DS, DD, LN, PB, X, O<:Orbit}
                               ddi,
                               linearise!,
                               B,
+                              project,
                               cache,
                               residual,
                               Evaluations())
@@ -151,6 +172,9 @@ function residual!(r::Orbit, F::System, x::Orbit)
     F.nl(tmp, x.a)
     r.a .-= tmp
 
+    # ---- back onto the invariant subspace, against rounding errors ----
+    F.project(r.a)
+
     # ---- phase conditions ----
     fill!(r.p, 0)
 
@@ -178,34 +202,14 @@ Write the gradient of `R = ½‖r‖²` into `g` and return `R`. Moves the linea
 operators to `x`.
 """
 function gradient!(g::Orbit, F::System, x::Orbit)
-    tmp = F.cache[1]
     F.evaluations.gradient += 1
 
     # ---- residual and linearisation point ----
     R = objective(F, x)
-    r = F.residual.a
     F.linearise!(F.adj, x.a)
 
-    # ---- field: -ω ∂s r + Σᵢ cᵢ ∂ᵢ r - L⁺ r ----
-    F.dds!(g.a, r)
-    g.a .*= -frequency(x)
-
-    for (i, dd!) in enumerate(F.ddi)
-        dd!(tmp, r)
-        g.a .+= drift(x, i) .* tmp
-    end
-
-    F.adj(tmp, r)
-    g.a .-= tmp
-
-    # ---- log-frequency ω ⟨∂s a, r⟩ and drift speeds -⟨∂ᵢ a, r⟩ ----
-    F.dds!(tmp, x.a)
-    g.p[1] = frequency(x) * dot(tmp, r)
-
-    for (i, dd!) in enumerate(F.ddi)
-        dd!(tmp, x.a)
-        g.p[1 + i] = -dot(tmp, r)
-    end
+    # ---- ∇R = 𝒥⁺ (r, 0): the residual has zero phase conditions ----
+    _jacobian_adjoint!(g, F, x, F.residual)
 
     return R
 end
@@ -248,6 +252,64 @@ function jacobian!(out::Orbit, F::System, x::Orbit, δx::Orbit)
         out.a .-= drift(δx, i) .* ∂a
         out.p[1 + i] = dot(∂a, δx.a)
     end
+
+    # ---- back onto the invariant subspace, against rounding errors ----
+    F.project(out.a)
+
+    return out
+end
+
+
+"""
+    jacobian_adjoint!(out::Orbit, F::System, x::Orbit, w::Orbit) -> out
+
+The adjoint of [`jacobian!`](@ref) in the inner product of the orbits, applied to `w`: with
+`w = (w_a, [w_s, w₁, …])`, the field and the multipliers of the phase conditions,
+
+    out.a = -ω ∂s w_a + Σᵢ cᵢ ∂ᵢ w_a - L⁺ w_a + w_s ∂s a + Σᵢ wᵢ ∂ᵢ a
+    out.p = [ω ⟨∂s a, w_a⟩, -⟨∂₁ a, w_a⟩, …]
+
+so that `⟨w, 𝒥 v⟩ = ⟨𝒥⁺ w, v⟩` for all orbits `v`. Assumes the linearisation point of the adjoint
+operator was set to `x` with `F.linearise!(F.adj, x.a)`. Needed by Krylov solvers of the
+least-squares problem `min ‖𝒥 δx + r‖`, such as LSQR; the gradient of `R = ½‖r‖²` is
+`𝒥⁺ (r, 0)`.
+"""
+function jacobian_adjoint!(out::Orbit, F::System, x::Orbit, w::Orbit)
+    F.evaluations.adjoint += 1
+    return _jacobian_adjoint!(out, F, x, w)
+end
+
+# 𝒥⁺ w, not counted: shared by jacobian_adjoint! and gradient!
+function _jacobian_adjoint!(out::Orbit, F::System, x::Orbit, w::Orbit)
+    tmp = F.cache[1]
+    ∂a  = F.cache[2]
+
+    # ---- adjoint operator on w_a: -ω ∂s w_a + Σᵢ cᵢ ∂ᵢ w_a - L⁺ w_a ----
+    F.dds!(tmp, w.a)
+    out.a .= -frequency(x) .* tmp
+
+    for (i, dd!) in enumerate(F.ddi)
+        dd!(tmp, w.a)
+        out.a .+= drift(x, i) .* tmp
+    end
+
+    F.adj(tmp, w.a)
+    out.a .-= tmp
+
+    # ---- time phase condition, transposed, and log-frequency row ω ⟨∂s a, w_a⟩ ----
+    F.dds!(∂a, x.a)
+    out.a .+= w.p[1] .* ∂a
+    out.p[1] = frequency(x) * dot(∂a, w.a)
+
+    # ---- space phase conditions, transposed, and drift rows -⟨∂ᵢ a, w_a⟩ ----
+    for (i, dd!) in enumerate(F.ddi)
+        dd!(∂a, x.a)
+        out.a .+= w.p[1 + i] .* ∂a
+        out.p[1 + i] = -dot(∂a, w.a)
+    end
+
+    # ---- back onto the invariant subspace, against rounding errors ----
+    F.project(out.a)
 
     return out
 end

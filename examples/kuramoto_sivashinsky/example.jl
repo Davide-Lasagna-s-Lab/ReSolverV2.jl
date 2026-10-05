@@ -7,7 +7,7 @@
 #
 #     julia --project=examples examples/kuramoto_sivashinsky/example.jl
 #
-# writes example.png next to this file.
+# writes example.png in the folder figures/ next to this file.
 
 using Random
 using Printf
@@ -143,4 +143,4 @@ linkyaxes!(newton...)
 # ---- the orbits take a little more room than the convergence rows ----
 rowsize!(fig.layout, 1, Relative(0.4))
 
-save(joinpath(@__DIR__, "example.png"), fig)
+save(joinpath(@__DIR__, "figures", "example.png"), fig)

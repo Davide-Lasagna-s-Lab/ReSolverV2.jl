@@ -2,7 +2,8 @@
 #
 #     julia --project=examples examples/lorenz/preconditioners.jl
 #
-# writes preconditioners.png next to this file. Three choices of B are compared:
+# writes preconditioners.png in the folder figures/ next to this file. Three choices of B are
+# compared:
 #
 #     none        B = I
 #     frequency   B = (1 + ω₀ n) I on the mode n: the time derivative only
@@ -207,4 +208,4 @@ for (j, kind) in enumerate(kinds)
     scatter!(ax, real.(λ), imag.(λ); color=colors[kind], markersize=7)
 end
 
-save(joinpath(@__DIR__, "preconditioners.png"), fig)
+save(joinpath(@__DIR__, "figures", "preconditioners.png"), fig)
