@@ -5,8 +5,9 @@ using ReSolverV2
 
 import ReSolverV2: objective, gradient!, jacobian!, jacobian_adjoint!, residual!
 
-# Kuramoto–Sivashinsky model of the examples, which depends only on FFTW
+# Kuramoto–Sivashinsky and Kolmogorov flow models of the examples, which depend only on FFTW
 include("../examples/kuramoto_sivashinsky/ks.jl")
+include("../examples/kolmogorov/kolmogorov.jl")
 
 Random.seed!(1)
 
@@ -164,6 +165,60 @@ end
     solve!(z, Fo, NewtonHookstep(maxiter=3, verbose=false))
 
     @test norm(odd!(copy(z.a)) .- z.a) == 0
+end
+
+
+@testset "Kolmogorov model                                        " begin
+    gk = KFGrid(8, 9; Re=40)
+
+    # a random real field: random coefficients, Hermitian on the column kx = 0, zero mean
+    function kf_field()
+        a = randn(ComplexF64, gk.n + 1, 2gk.n + 1, gk.Ns)
+        for l in 1:gk.Ns, k in 1:gk.n
+            a[1, 2gk.n + 2 - k, l] = conj(a[1, k + 1, l])
+        end
+        a[1, 1, :] .= 0
+        return KFField(gk, a)
+    end
+
+    u = kf_field()
+    v = kf_field()
+    w = kf_field()
+
+    # ---- derivatives are skew-adjoint in the inner product of the fields ----
+    @test abs(dot(ddx!(similar(u), u), v) + dot(u, ddx!(similar(v), v))) < 1e-12
+    @test abs(dot(dds!(similar(u), u), v) + dot(u, dds!(similar(v), v))) < 1e-12
+
+    # ---- linearised = central difference of nonlinear, exact for a quadratic operator ----
+    knl  = KFNonlinear(gk)
+    klin = linearise!(KFLinearised(gk), u)
+    kadj = linearise!(KFLinearised(gk; adjoint=true), u)
+
+    ε  = 1e-4
+    FD = (knl(similar(u), u .+ ε .* v) .- knl(similar(u), u .- ε .* v)) ./ 2ε
+    Lv = klin(similar(u), v)
+
+    @test norm(FD .- Lv) / norm(Lv) < 1e-8
+
+    # ---- the adjoint is exact ----
+    @test dot(w, Lv) ≈ dot(kadj(similar(w), w), v)
+
+    # ---- the laminar flow, ω = -(Re/kf) cos(kf y), is a steady solution ----
+    lam = KFField(gk, gk.forcing .* (gk.Re / gk.kf^2))
+
+    @test norm(knl(similar(lam), lam)) < 1e-12
+
+    # ---- gradient and Jacobian of the residual of a relative periodic orbit ----
+    xk = Orbit(u, [log(0.7), 0.1])
+    Fk = System(knl, klin, kadj, dds!, xk; linearise!, ddi=(ddx!,), B=KFPreconditioner(xk))
+    δk = Orbit(v, [0.3, -0.2])
+    gk₁ = similar(xk)
+    gradient!(gk₁, Fk, xk)
+
+    Rp = objective(Fk, Orbit(xk.a .+ ε .* δk.a, xk.p .+ ε .* δk.p))
+    Rm = objective(Fk, Orbit(xk.a .- ε .* δk.a, xk.p .- ε .* δk.p))
+
+    @test abs((Rp - Rm) / 2ε - dot(gk₁, δk)) / abs(dot(gk₁, δk)) < 1e-6
 end
 
 

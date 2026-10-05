@@ -251,32 +251,63 @@ and a tolerance between ``10^{-2}`` and ``10^{-4}`` is a safe choice.
 
 ## Preconditioners
 
-Five preconditioners are compared, all diagonal in Fourier, frozen at the initial frequency
-``\omega_0`` and drift speed ``c_0``. With
+**What the Newton system contains.** The block of the Jacobian that acts on the field is the
+linearised space-time operator (see [Search by root finding](@ref)),
 
 ```math
-\hat A_0(k, n) = \mathrm{i}(\omega_0 n - c_0 k) + k^4 - k^2 , \tag{6}
+A\{u\}\,v = \omega\,\partial_s v - c\,\partial_x v - L\{u\}\,v ,
+\qquad
+L\{u\}\,v = \underbrace{-\,\partial_x^2 v - \partial_x^4 v}_{\text{linear part of KS}}
+          \;\underbrace{-\,\partial_x (u\,v)}_{\text{advection by the orbit}}
+          \;-\; \langle v\rangle , \tag{6}
 ```
 
-the symbol of the linear space-time operator ``\omega_0\partial_s - c_0\partial_x - L`` about the
-mean state ``u = 0``, the multipliers of the mode ``(k, n)`` are
+with ``L\{u\}`` the linearisation of (4) about the current orbit ``u``. A preconditioner ``B`` should
+approximate ``A\{u\}`` and be cheap to invert. The advection ``\partial_x(u\,v)`` couples every
+Fourier mode of ``v`` to every other, through the modes of ``u``; the other terms do not.
 
-| name | multiplier of the mode ``(k, n)`` | captures |
+**Why the preconditioners are diagonal.** Every Fourier mode of the space-time grid,
+``e^{\mathrm{i}(k x + n s)}``, is an eigenfunction of the derivatives:
+``\partial_s \to \mathrm{i}\,n``, ``\partial_x \to \mathrm{i}\,k``, ``\partial_x^2 \to -k^2``,
+``\partial_x^4 \to k^4``. Dropping the advection, i.e. linearising about the mean state ``u = 0``,
+leaves an operator that maps each mode to a multiple of itself, with the multiplier, or *symbol*,
+
+```math
+A\{0\}\, e^{\mathrm{i}(k x + n s)} = \hat A_0(k, n)\, e^{\mathrm{i}(k x + n s)} ,
+\qquad
+\hat A_0(k, n) = \mathrm{i}(\omega_0 n - c_0 k) + k^4 - k^2 , \tag{7}
+```
+
+and ``\hat A_0(0, 0) = 1`` on the mean, where the pinning term acts. The frequency and the drift speed
+are frozen at their initial values ``\omega_0`` and ``c_0``, so that ``B`` does not change during a
+search. An operator of this kind, ``B\,e^{\mathrm{i}(kx+ns)} = \hat b(k, n)\,e^{\mathrm{i}(kx+ns)}``,
+is *diagonal in Fourier*, and so is its inverse: applying ``B^{-1}`` to a field means transforming
+it to space-time Fourier coefficients, dividing each coefficient by ``\hat b(k, n)``, and
+transforming back, two FFTs. Its adjoint divides by the complex conjugates
+``\overline{\hat b(k, n)}``.
+
+**The five preconditioners** differ in which parts of ``\hat A_0`` they keep, and whether they keep
+its phase or only its size:
+
+| name | multiplier ``\hat b(k, n)`` | keeps of ``A\{u\}`` |
 |---|---|---|
 | none | ``1`` | nothing |
-| frequency | ``1 + \lvert \omega_0 n - c_0 k\rvert`` | the size of the time derivative in the moving frame |
-| viscous | ``1 + k^4`` | the size of the fourth-order dissipation |
-| linear | ``1 + \lvert \hat A_0(k, n)\rvert`` | the size of the linear space-time operator |
-| jacobian | ``\hat A_0(k, n)``, and ``1`` on the mean | the linear space-time operator |
+| frequency | ``1 + \lvert \omega_0 n - c_0 k\rvert`` | the size of the time derivative in the moving frame, ``\omega\,\partial_s - c\,\partial_x`` |
+| viscous | ``1 + k^4`` | the size of the fourth-order dissipation, ``\partial_x^4`` |
+| linear | ``1 + \lvert \hat A_0(k, n)\rvert`` | the size of the whole linear part, ``\lvert \hat A_0\rvert`` |
+| jacobian | ``\hat A_0(k, n)``, and ``1`` on the mean | the whole linear part, ``A\{0\}`` itself |
 
-The first four are real and positive, hence self-adjoint; the last is complex, and its adjoint divides
-by the conjugate multipliers. The mean, ``k = n = 0``, is where the pinning term of (4) acts, with
-symbol one. The jacobian preconditioner is the exact analogue of the one of the Lorenz system: the
-mean of the orbit is zero, and the Jacobian of the right-hand side at the mean state is the linear
-operator. Its multipliers are smallest on the linearly unstable wavenumbers ``0 < k < 1`` at
-``n = 0``, between ``0.075`` and ``0.22`` in modulus, but none vanishes. On the parameters all five
-divide the log-frequency by ``\lVert \omega_0\,\partial_s u_0\rVert`` and the drift speed by
-``\lVert \partial_x u_0\rVert``. All cost two FFTs per application.
+The first four are real and positive, hence self-adjoint, ``B^{-+} = B^{-1}``; the added ``1`` keeps
+them bounded below by one, so that no mode is amplified, and invertible on the mean. The jacobian
+preconditioner is complex: it is ``A\{0\}`` itself, the exact analogue of the jacobian
+preconditioner of the Lorenz system, since the mean of the orbit is zero and the Jacobian of the
+right-hand side at the mean state is the linear operator. Its multipliers are smallest on the
+linearly unstable wavenumbers ``0 < k < 1`` at ``n = 0``, between ``0.075`` and ``0.22`` in modulus,
+but none vanishes. None of the five contains the advection by the orbit, which is what the
+eigenvalues of ``\mathcal{J}B^{-1}`` that lie away from one represent below. On the parameters all
+five divide the log-frequency by ``\lVert \omega_0\,\partial_s u_0\rVert`` and the drift speed by
+``\lVert \partial_x u_0\rVert``, the norms of their columns of the Jacobian. In the code,
+`KSPreconditioner(x; kind)` in `ks.jl` computes the multipliers once, from the initial orbit `x`.
 
 ![Preconditioners for the Kuramoto–Sivashinsky orbit](../assets/ks_preconditioners.png)
 
@@ -305,7 +336,7 @@ in about 460 Jacobian actions, the jacobian one in 142. The other three exhaust 
 200 vectors in every Newton iteration without reaching the tolerance of the inner solve, and the
 hookstep, with truncated steps, stalls.
 
-The symbol (6) explains the costs. The eigenvalues of the linear space-time operator lie on vertical
+The symbol (7) explains the costs. The eigenvalues of the linear space-time operator lie on vertical
 lines in the complex plane, one for each wavenumber, at ``\mathrm{Re}\,\lambda = k^4 - k^2`` and
 spread along the imaginary axis up to ``\pm\,\omega N_s/2``. The spectrum of ``\mathcal{J}`` follows
 this structure, with the advection ``-\partial_x(u\,\cdot)`` as a perturbation:
