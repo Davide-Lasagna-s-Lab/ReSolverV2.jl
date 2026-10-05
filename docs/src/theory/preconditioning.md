@@ -112,6 +112,92 @@ keeps a consistent notion of step length. In the code, a preconditioner type ext
 `precondition!` and `precondition_adjoint!`, which apply ``B^{-1}`` and ``B^{-+}`` (see
 [Usage](@ref)).
 
+## A picture in two dimensions
+
+The effect of the metric can be seen on a system of two quadratic equations in two unknowns,
+``p = (x, y)``,
+
+```math
+r_1 = 4\,(x - \tfrac12) + (y - 1)^2 , \qquad r_2 = (x - \tfrac12)^2 + (y - 1) , \tag{7}
+```
+
+with the solution ``p_\star = (\tfrac12, 1)``, where the Jacobian is ``\mathrm{diag}(4, 1)``. The
+problem is four times stiffer along ``x`` than along ``y``, and the Gauss–Newton Hessian of
+``R = \tfrac12\lVert r\rVert^2``, ``\mathcal{J}_r^\top \mathcal{J}_r = \mathrm{diag}(16, 1)``, sixteen
+times: the level sets of ``R`` around the solution are ellipses four times longer along ``y`` than
+along ``x``. The preconditioner is ``B = \mathrm{diag}(4, 1)``, the Jacobian at the solution. The
+script is `examples/metric/metric.jl`.
+
+![A preconditioner as a change of metric](../assets/metric_metric.png)
+
+*Left: level sets of ``R`` (blue) in the variables ``p = (x, y)``, the zero set of ``r_1`` (dashed),
+and steepest descent from the same start in the plain metric (grey) and in the metric of ``B``
+(red). Centre: the same in the variables ``q = Bp = (4x, y)``. Right: at the start, the trust
+regions ``\lVert \delta p\rVert \le \Delta`` (grey) and ``\lVert B\,\delta p\rVert \le \Delta`` (red),
+the hookstep curves of the two metrics from the Newton step (cross) towards steepest descent, and
+the hooksteps on the two boundaries (dots).*
+
+**The metric.** In the plain metric the steepest-descent direction ``-\nabla R`` is normal to the
+level sets. In a narrow valley it points across the valley, not along it: the path of steepest
+descent with a line search zigzags from one side to the other (left, grey), and after 25 iterations
+``R`` is still ``3.6 \times 10^{-4}``. In the metric of ``B`` lengths are measured as
+``\lVert B\,\delta p\rVert``, a step along ``x`` counting four times more than the same step along
+``y``, and the steepest-descent direction becomes ``-M^{-1}\nabla R``, with ``M = B^\top B``: the
+direction that reduces ``R`` fastest per unit of *this* length. Its first step, like the plain one,
+goes mostly along ``x`` and reaches the floor of the valley; the following ones run along the valley
+instead of across it, and the path reaches the solution, to rounding, in 6 iterations (left, red).
+
+**A change of variables.** In the variables ``q = Bp`` the metric of ``B`` is the plain one,
+``\lVert B\,\delta p\rVert = \lVert \delta q\rVert``, and the level sets of
+``\tilde R(q) = R(B^{-1}q)`` are nearly circles around the solution (centre): the stiffness has been
+removed by stretching ``x`` by a factor of four. Near the solution, plain steepest descent in ``q``
+points at the solution, and its path, mapped back with ``p = B^{-1}q``, is the red path on the left. The two
+descriptions are the same algorithm: with ``\nabla_q \tilde R = B^{-\top}\nabla R``, a plain step in
+``q``, ``\delta q = -\alpha\, \nabla_q \tilde R``, is the step
+``\delta p = B^{-1}\delta q = -\alpha\, B^{-1}B^{-\top}\nabla R = -\alpha\, M^{-1}\nabla R`` in ``p``.
+
+**L-BFGS in the variables ``q``.** Running L-BFGS in the metric of ``B`` is exactly running plain
+L-BFGS on ``\tilde R(q)``, and this is how the code implements it, without ever forming ``q``. The
+curvature pairs in the variables ``q`` are ``s_q = B s`` and ``y_q = B^{-\top} y``, so that
+
+```math
+\langle y_q, s_q\rangle = \langle y, s\rangle , \qquad
+\langle y_q, y_q\rangle = \langle y, M^{-1} y\rangle , \qquad
+\langle s_q, s_q\rangle = \lVert s\rVert_B^2 ,
+```
+
+and the scaling of the initial inverse Hessian of plain L-BFGS in ``q``,
+``\theta = \langle y_q, s_q\rangle / \langle y_q, y_q\rangle``, is the ``\theta`` of (4); its initial
+inverse Hessian ``\theta I`` in ``q`` is ``\theta M^{-1}`` in ``p``. The two-loop recursion only needs
+inner products of these vectors and the action of the initial inverse Hessian, which in ``p`` is the
+application of ``B^{-1}B^{-+}``: `precondition_adjoint!` followed by `precondition!`. Its convergence
+is governed by the Hessian of ``\tilde R``, whose Gauss–Newton approximation is
+``(\mathcal{J}_r B^{-1})^\top (\mathcal{J}_r B^{-1})``: by the singular values of ``\mathcal{J}_r B^{-1}``.
+
+**The hookstep in the variables ``q``.** The same change of variables applies to the Newton system.
+In ``q`` the residual is ``r(B^{-1}q)``, whose Jacobian is ``\mathcal{J}B^{-1}``: the Arnoldi
+iteration runs on this operator, and its basis ``Q_n`` spans a Krylov space *of the variables ``q``*.
+The hookstep is computed there, ``z = Q_n y`` with ``\lVert y\rVert = \lVert z\rVert \le \Delta``, a
+ball in ``q``, and mapped back to the orbit by ``B^{-1}``:
+
+```math
+\delta p = B^{-1} z = B^{-1} Q_n y , \qquad \lVert B\,\delta p\rVert = \lVert y\rVert \le \Delta . \tag{8}
+```
+
+This is (5): the factor ``B^{-1}`` in front of ``Q_n y`` is the map from the variables ``q``, in which
+GMRES and the trust region work, back to the orbit. In the variables ``p`` the ball is the
+ellipsoid ``\lVert B\,\delta p\rVert \le \Delta`` (right, red): short along the stiff direction ``x``,
+long along ``y``. The hookstep curves start from the same Newton step, which does not depend on the
+metric, and turn, as the trust region shrinks, towards the steepest-descent direction of their own
+metric, ``-\nabla R`` or ``-M^{-1}\nabla R``. With ``\Delta = 0.1`` the hookstep on the circle (grey
+dot) is ``\delta p = (0.093, -0.036)``, almost entirely along the stiff direction ``x`` and at an
+angle of ``41^\circ`` to the Newton step; the hookstep on the ellipse (red dot) is
+``\delta p = (0.025, -0.020)``, a quarter as long along ``x``, at an angle of ``23^\circ`` to the
+Newton step. The trust region of ``B`` measures each direction against its own stiffness and keeps
+the step closer to the Newton direction. A good preconditioner thus helps the hookstep twice: GMRES
+converges in fewer steps, because ``\mathcal{J}B^{-1}`` is close to the identity, and the trust
+region has the shape of the problem.
+
 ## Choosing the preconditioner
 
 The general principle of Newton–Krylov methods for PDEs is *physics-based* preconditioning (Knoll &

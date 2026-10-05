@@ -34,9 +34,9 @@ the same, which depends on their implementation, not on the methods. The scripts
 
 | system | ``N`` | ``L`` | ``L^+`` | residual | gradient | Jacobian action | ``B^{-1}`` |
 |---|---|---|---|---|---|---|---|
-| Lorenz, ``K = 40`` | OPS_LOR |
-| KS, ``33 \times 49`` | OPS_KS1 |
-| KS, ``129 \times 193`` | OPS_KS4 |
+| Lorenz, ``K = 40`` | 45.5 | 43.7 | 43.8 | 46.0 | 115.1 | 46.9 | 4.7 |
+| KS, ``33 \times 49`` | 16.9 | 17.0 | 23.0 | 44.5 | 120.1 | 71.1 | 14.4 |
+| KS, ``129 \times 193`` | 1 307 | 1 309 | 1 765 | 3 125 | 8 704 | 6 405 | 927 |
 
 *Times in μs per call. Residual, gradient and Jacobian action are the functions of the package,
 which add the derivatives, the inner products and, for the gradient, a residual and a linearisation
@@ -48,7 +48,9 @@ cost 2.7 times the nonlinear operator; written out component by component they c
 the Kuramoto–Sivashinsky model the adjoint operator computed ``\partial_x w`` with a transform pair
 of its own, five FFTs against three for ``N`` and ``L``; computing it from the coefficients of ``w``,
 already available, brings it to four, the minimum for ``U\,\partial_x w``. With the operators
-balanced, a gradient costs about two residuals, and a Jacobian action about one and a half.
+balanced, a gradient costs two and a half to three residuals, since it includes a residual, a
+linearisation and an adjoint operator, and a Jacobian action one to two, since it adds the
+derivatives and the preconditioner to the linearised operator.
 
 ## The two preconditioners of L-BFGS
 
@@ -89,7 +91,38 @@ curvature pairs, the hookstep up to 150 Krylov vectors.
 *Residual against the operator applications (left) and the wall-clock time (right), for the four
 searches. Dashed: the tolerance ``10^{-6}``.*
 
-KS_METHODS
+| start, grid | L-BFGS, linear | L-BFGS, jacobian | hookstep, jacobian |
+|---|---|---|---|
+| far, ``33 \times 49`` | 2 949 | not reached (``1.6 \times 10^{-6}`` after ``2 \times 10^{5}``) | 411 |
+| close, ``33 \times 49`` | 1 232 | 3 208 | 100 |
+| far, ``129 \times 193`` | 2 982 | not reached (``1.4 \times 10^{-4}`` after 60 s) | 411 |
+| close, ``129 \times 193`` | 1 305 | 2 949 | 100 |
+
+*Operator applications to ``\lVert r\rVert < 10^{-6}``.*
+
+Counted in operator applications the hookstep is the cheaper method in all four searches: seven
+times cheaper than the better L-BFGS from the far start, twelve times from the close one. For both
+methods the count does not depend on the resolution: the two grids differ by a few percent, the
+mark of a preconditioner that captures the stiffness of the problem at every scale. In wall-clock
+time the advantage of the hookstep is smaller on the base grid, 0.10 s against 0.32 s from the far
+start, because there the operators are cheap and the dense linear algebra of the hookstep, the
+Hessenberg least-squares problems and the orthogonalisation of the Krylov basis, is not negligible;
+on the fine grid, where the operators dominate, the ratio of times approaches that of the counts,
+3.9 s against 20.8 s.
+
+The two preconditioners of L-BFGS behave very differently. With the linear one L-BFGS converges at a
+steady rate. With the jacobian one it is slower from the close start, by a factor of 2.3 to 2.6, and
+from the far start it reaches ``10^{-3}`` five times later and then almost stops: on the base grid
+the residual decreases from ``1.24 \times 10^{-6}`` to ``1.20 \times 10^{-6}`` between iterations
+``10^{4}`` and ``2 \times 10^{4}``. The search is not stuck: each line search accepts the full step,
+and the residual decreases by a factor of about ``1 - 3.5 \times 10^{-6}`` per iteration, the linear
+convergence of a quasi-Newton method on a very ill-conditioned problem. The singular values of
+``\mathcal{J}B^{-1}`` span ``10^{-2}`` to 15 with the jacobian preconditioner, against ``10^{-2}``
+to 1.8 with the linear one: the smallest are the same, the largest come from the linearly unstable
+wavenumbers, where ``|\hat A_0|`` is small. The steps of a gradient-based method are limited by the
+largest curvature, so the components of small curvature converge much more slowly with the
+jacobian preconditioner: for steepest descent, ``(15/1.8)^2 \approx 70`` times more slowly. The residual left is concentrated, 87% of its energy, in the unstable
+wavenumbers ``m = 1, 2`` at ``n = 0``.
 
 ## Lorenz system
 
@@ -104,7 +137,25 @@ stop at ``\lVert r\rVert < 10^{-12}`` or after 10 s; L-BFGS keeps 10 curvature p
 *Residual against the operator applications (left) and the wall-clock time (right), for the four
 searches. Dashed: the tolerance ``10^{-12}``.*
 
-LOR_METHODS
+| start, ``K`` | L-BFGS, to ``10^{-3}`` | L-BFGS, to ``10^{-6}`` | L-BFGS, to ``10^{-12}`` | hookstep, to ``10^{-12}`` |
+|---|---|---|---|---|
+| far, 20 | 712 | 1 118 | not reached | 206 |
+| close, 20 | 402 | 956 | not reached | 114 |
+| far, 80 | 561 | 1 109 | not reached | 206 |
+| close, 80 | 408 | 1 002 | not reached | 114 |
+
+*Operator applications to each residual level; the hookstep jumps from above ``10^{-3}`` to below
+``10^{-6}`` in a single Newton iteration, after 164 applications from the far start and 74 to 94
+from the close one.*
+
+The picture is the same as for Kuramoto–Sivashinsky, with the same preconditioner for both methods:
+the hookstep reaches ``10^{-12}`` with five to ten times fewer applications than L-BFGS needs for
+``10^{-6}``, at a cost independent of the number of modes. L-BFGS does not reach ``10^{-12}`` within
+10 s: it stalls between ``4 \times 10^{-12}`` and ``2 \times 10^{-11}``, where the objective
+``R = \tfrac12\lVert r\rVert^2 \approx 10^{-23}`` is known only to the accuracy of the rounding
+errors in ``r``, of order ``10^{-13}`` for fields of size ``10``. The Armijo test is then decided by
+rounding, the line search backtracks, and an iteration costs up to 20 residual evaluations instead
+of one. The hookstep is not affected: it crosses this range in one or two Newton steps.
 
 ## Limited memory
 
@@ -123,7 +174,22 @@ time for each budget. Right: time to reach the tolerance; missing points did not
 
 *Lorenz, far start, ``K = 40``, tolerance ``10^{-12}``.*
 
-MEMORY
+For Kuramoto–Sivashinsky, L-BFGS reaches ``10^{-6}`` with every budget, in 0.3 to 0.6 s: fewer
+curvature pairs cost more iterations, from 418 with 100 pairs to 1 832 with 2, but never failure.
+The hookstep needs a Krylov space large enough to solve the preconditioned Newton systems, about 45
+to 55 vectors here: with ``M \ge 50`` it converges in 8 Newton iterations whatever the budget; with
+``M \le 20`` the inner solves stop far from their tolerance, the steps are poor, the trust region
+shrinks until it collapses, and the search stops at ``\lVert r\rVert \approx 5 \times 10^{-2}``.
+For Lorenz the threshold of the hookstep is lower, 15 to 20 vectors: with ``M = 10`` it still
+converges, in 205 Newton iterations and 0.15 s, and with ``M \ge 20`` in 10. L-BFGS needs at least
+25 pairs, ``M = 50``, to reach ``10^{-12}`` within 10 s, and stalls at ``3 \times 10^{-7}`` with 2.
+
+The two methods respond to memory in opposite ways. The cost of the hookstep does not depend on the
+budget above a threshold, the Krylov dimension that the preconditioned Newton systems need, and the
+method fails below it. L-BFGS degrades gracefully, never fails, and is slower whenever the budget
+allows the hookstep to work. A good preconditioner lowers the threshold of the hookstep, one more
+reason to invest in it; without one the threshold is close to the number of unknowns, as the
+convergence studies of the two examples show, and only L-BFGS remains practical for a large problem.
 
 ## A hybrid search
 
@@ -145,8 +211,43 @@ its own [`System`](@ref).
 *Lorenz, far starts with ``K = 20`` and ``K = 80``: L-BFGS, the hookstep and the hybrid with
 thresholds ``r_T = 10``, ``5``, ``1`` and ``0.1`` (dashed).*
 
-HYBRID
+| | hookstep alone | ``r_T = 10`` | ``5`` | ``1`` | ``0.1`` |
+|---|---|---|---|---|---|
+| Lorenz, ``K = 20`` and ``80`` | 206 | 192 | 197 | 208 | 377–402 |
+
+| | hookstep alone | ``r_T = 3 \times 10^{-2}`` | ``2 \times 10^{-2}`` | ``10^{-2}`` |
+|---|---|---|---|---|
+| Kuramoto–Sivashinsky, ``33 \times 49`` | 411 (8 Newton iterations) | 655 (2 + 12) | 616 (5 + 11) | 995 (21 + 17) |
+
+*Operator applications to ``\lVert r\rVert < 10^{-12}`` (Lorenz) and ``10^{-6}`` (KS), from the far
+starts; in brackets, L-BFGS and Newton iterations.*
+
+The hybrid search does not pay off. For Lorenz a few L-BFGS iterations, down to ``r_T = 5`` or
+``10``, save two Newton iterations and 4 to 7% of the cost; a lower threshold costs more, because
+L-BFGS slows down below ``\lVert r\rVert \approx 1``, and ``r_T = 0.1`` doubles the cost. For
+Kuramoto–Sivashinsky every threshold costs more than the hookstep alone, by 50 to 140%. L-BFGS lowers
+the residual faster than the hookstep at first (see the far start in the figure of the previous
+section), but the residual is a poor guide to the distance from the region where Newton converges
+fast: from the point reached by L-BFGS the hookstep needs 11 to 17 iterations, against 8 from the
+near-recurrence, and it starts again with the initial trust region. Far from the solution the
+hookstep is cheap: with the Krylov space stopped on the residual of the GMRES solution, a hookstep
+limited by the trust region costs about 50 Jacobian actions, the price of about 17 L-BFGS iterations.
+In these examples the trust region is an efficient globalisation, and leaves little for L-BFGS to
+do.
 
 ## Conclusions
 
-CONCLUSIONS
+- With a preconditioner that captures the linear space-time operator, the hookstep is the faster
+  method, from far as well as from close initial guesses: five to twelve times fewer operator
+  applications than L-BFGS, at a cost independent of the resolution, and it reaches the level of
+  rounding errors, which L-BFGS cannot.
+- The preconditioner should be chosen for each method: the operator itself, phase included, for the
+  hookstep; a positive operator bounded below, a well-balanced metric, for L-BFGS. For L-BFGS the
+  condition number of ``\mathcal{J}B^{-1}`` matters, for the hookstep the clustering of its
+  eigenvalues.
+- L-BFGS is the method of choice when memory is scarce: below the Krylov dimension that the Newton
+  systems need, the hookstep fails, while L-BFGS works with a handful of stored orbits.
+- A hybrid search, L-BFGS first, brings no significant gain over the hookstep alone in these
+  examples.
+- Counting operator applications is meaningful only if the operators cost about the same; checking
+  this exposed two inefficient implementations in the examples, which a count alone would have hidden.

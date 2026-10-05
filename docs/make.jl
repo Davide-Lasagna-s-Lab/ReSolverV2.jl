@@ -11,7 +11,7 @@ using ReSolverV2
 assets = joinpath(@__DIR__, "src", "assets")
 mkpath(assets)
 
-for (folder, prefix) in (("kuramoto_sivashinsky", "ks"), ("lorenz", "lorenz"))
+for (folder, prefix) in (("kuramoto_sivashinsky", "ks"), ("lorenz", "lorenz"), ("metric", "metric"))
     dir = joinpath(@__DIR__, "..", "examples", folder)
     for file in filter(endswith(".png"), readdir(dir))
         cp(joinpath(dir, file), joinpath(assets, "$(prefix)_$(file)"); force=true)

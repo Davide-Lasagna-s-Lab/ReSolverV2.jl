@@ -110,6 +110,17 @@ the Newton step is longer than the trust region, and only part of it is taken. F
 iteration the full Newton step is taken, and the residual drops from ``10^{-3}`` to ``10^{-12}`` in
 three iterations. The search costs 441 Jacobian actions.
 
+**Size of the problem.** On the grid of ``33 \times 49`` points in space and rescaled time, the orbit
+has ``33 \times 49 = 1\,617`` field values, the log-frequency and the drift speed: ``N = 1\,619``
+real unknowns. The search costs 441 Jacobian actions, about a quarter of an action per unknown, each
+the cost of a few FFTs of the space-time grid. Newton's method with a direct solver would instead
+form the Jacobian at every iteration, ``N`` actions for the ``1\,619 \times 1\,619`` dense matrix of
+the spectral discretisation, and factorise it, about ``2N^3/3 \approx 2.8 \times 10^{9}`` operations.
+A finite-difference discretisation in time makes the Jacobian banded and the factorisation much
+cheaper, but its cost grows as the cube of the number of spatial unknowns, while the number of
+Jacobian actions of the preconditioned Krylov solver does not grow with the resolution: see
+[Cost compared with direct solvers](@ref) for an estimate.
+
 ### References
 
 - Y. Kuramoto and T. Tsuzuki, *Persistent propagation of concentration waves in dissipative media

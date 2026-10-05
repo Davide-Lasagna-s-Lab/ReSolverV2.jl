@@ -60,9 +60,9 @@ solve!(x, F, NewtonHookstep(maxiter=50, krylov_dim=150, Δ=0.1, Δmax=10))
 
 ![Shortest pre-periodic orbit of Kuramoto–Sivashinsky on L = 22](examples/kuramoto_sivashinsky/example.png)
 
-From left to right: the initial guess and the converged orbit; the residual against the Newton
-iterations, hooksteps open and full Newton steps filled; the convergence of GMRES in each Newton
-iteration.
+Top: the initial guess and the converged orbit. Middle and bottom: the search without and with the
+preconditioner; left, the residual against the Newton iterations, hooksteps open and full Newton
+steps filled; right, the convergence of GMRES in each Newton iteration.
 
 The `examples/` folder has the Kuramoto–Sivashinsky equation and the Lorenz system, each with a
 model file, an example, a convergence study and an analysis of the preconditioners:

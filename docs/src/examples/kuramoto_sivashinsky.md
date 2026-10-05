@@ -159,19 +159,19 @@ iterations. Solid lines: linear preconditioner; dashed: none.*
 
 | grid | unknowns | ``\lVert r\rVert``, no preconditioner | Jacobian actions | ``\lVert r\rVert``, linear preconditioner | Newton iterations | Jacobian actions | time |
 |---|---|---|---|---|---|---|---|
-| base | 1 619 | ``5.5 \times 10^{-3}`` | 2400 | ``1.6 \times 10^{-10}`` | 3 | 449 | 0.7 s |
-| ``\times 2`` | 6 307 | ``6.6 \times 10^{-3}`` | 2400 | ``1.5 \times 10^{-10}`` | 3 | 462 | 1.6 s |
-| ``\times 4`` | 24 899 | ``1.2 \times 10^{-2}`` | 2400 | ``1.6 \times 10^{-10}`` | 3 | 469 | 5.8 s |
-| ``\times 8`` | 98 947 | ``1.4 \times 10^{-2}`` | 2400 | ``3.0 \times 10^{-10}`` | 3 | 475 | 22.8 s |
+| base | 1 619 | ``5.5 \times 10^{-3}`` | 2400 | ``1.6 \times 10^{-10}`` | 3 | 449 | 0.3 s |
+| ``\times 2`` | 6 307 | ``6.6 \times 10^{-3}`` | 2400 | ``1.5 \times 10^{-10}`` | 3 | 462 | 1.5 s |
+| ``\times 4`` | 24 899 | ``1.2 \times 10^{-2}`` | 2400 | ``1.6 \times 10^{-10}`` | 3 | 469 | 6.0 s |
+| ``\times 8`` | 98 947 | ``1.4 \times 10^{-2}`` | 2400 | ``3.0 \times 10^{-10}`` | 3 | 475 | 26.8 s |
 
 *Final residual and cost, from ``\lVert r\rVert = 1.6 \times 10^{-2}``. Without preconditioner the
 search is stopped after 12 Newton iterations.*
 
 With the preconditioner, Newton converges in 3 iterations on every grid, and the cost in Jacobian
 actions grows by 6% over a 61-fold increase of the number of unknowns: the method is
-mesh-independent. The computing time grows by factors of 2.3, 3.6 and 3.9 between successive grids,
-approaching the factor of four by which the number of unknowns grows: the work per unknown is
-constant, the best that can be expected. The residual drops from ``1.6 \times 10^{-2}`` to
+mesh-independent. The computing time grows by factors between 4 and 5 between successive grids,
+close to the factor of four by which the number of unknowns grows, times the logarithm of the FFTs:
+the work per unknown is nearly constant, the best that can be expected. The residual drops from ``1.6 \times 10^{-2}`` to
 ``1.2 \times 10^{-4}``, ``1.5 \times 10^{-7}`` and ``2 \times 10^{-10}``: after the first step the
 convergence is linear with ratio ``10^{-3}``, the tolerance of the inner solve, rather than quadratic.
 This is the behaviour of an inexact Newton method whose forcing term is constant (Dembo, Eisenstat
@@ -364,11 +364,59 @@ one, gives a better-balanced metric (see [Preconditioning](@ref)). The examples 
 linear preconditioner, the default of `KSPreconditioner`, for the search of the orbit and the
 convergence study, and the jacobian one is the better choice for the hookstep alone.
 
+## Cost compared with direct solvers
+
+The matrix-free hookstep never forms the Jacobian. How does it compare with Newton's method with
+a direct solver, which forms and factorises it? An estimate of the arithmetic and of the memory of a
+search that converges in 3 Newton iterations, as from the close start of the convergence study,
+for three ways of solving the Newton systems:
+
+- **matrix-free**, as in this package, with the jacobian preconditioner: about 47 Arnoldi steps per
+  Newton iteration, each one Jacobian action, about nine real FFTs of the space-time grid with the
+  derivatives and the preconditioner, and the orthogonalisation of the new Krylov vector, done twice;
+  the memory is that of the Krylov basis;
+- **dense**, with the same spectral discretisation: the Jacobian is a dense ``N \times N`` matrix,
+  because spectral derivatives couple all the points; forming it takes ``N`` Jacobian actions, and
+  its LU factorisation ``2N^3/3`` operations;
+- **banded**, as in Lasagna (2018, appendix B): fourth-order centred finite differences in time on
+  ``M`` points, with the spatial Jacobian a dense ``n_x \times n_x`` block at each time; the Newton
+  matrix is cyclic block pentadiagonal, bordered by the phase condition, and is solved by a banded LU
+  factorisation, with lower and upper bandwidths ``2n_x``, about ``16\,n_x^3 M`` operations and
+  ``6\,n_x^2 M`` stored entries, plus a low-rank correction for the corner blocks of the periodic
+  boundary conditions. The estimate takes ``M = N_s``, which is optimistic: finite differences
+  need more points in time than Fourier modes for the same accuracy.
+
+| grid | unknowns | matrix-free: operations | memory | dense: operations | memory | banded: operations | memory |
+|---|---|---|---|---|---|---|---|
+| base | 1 619 | ``1.0 \times 10^{8}`` | 0.7 MB | ``8.4 \times 10^{9}`` | 21 MB | ``8.4 \times 10^{7}`` | 2.6 MB |
+| ``\times 2`` | 6 307 | ``4.2 \times 10^{8}`` | 2.7 MB | ``5.1 \times 10^{11}`` | 0.32 GB | ``1.3 \times 10^{9}`` | 20 MB |
+| ``\times 4`` | 24 899 | ``1.8 \times 10^{9}`` | 11 MB | ``3.0 \times 10^{13}`` | 5.0 GB | ``2.0 \times 10^{10}`` | 154 MB |
+| ``\times 8`` | 98 947 | ``7.8 \times 10^{9}`` | 42 MB | ``2.0 \times 10^{15}`` | 78 GB | ``3.1 \times 10^{11}`` | 1.2 GB |
+
+*Floating-point operations of three Newton iterations, and memory of the largest arrays, estimated
+as described above. The dense column omits the cost of forming the Jacobian, ``N`` actions per
+iteration, which is smaller than that of its factorisation.*
+
+On the base grid the banded solver of the time-domain formulation is as cheap as the matrix-free
+method, and cheaper in operations: for a one-dimensional PDE at modest resolution, a direct solver
+that exploits the sparsity in time is an excellent choice, robust and independent of any
+preconditioner. The two approaches scale differently, though. Refining the grid by two in both
+directions multiplies the cost of the banded factorisation by 16, ``n_x^3`` times ``M``, and its
+memory by 8, against a factor of about 4.3 for the matrix-free method, whose cost grows as the
+number of unknowns times a logarithm, at a fixed number of Jacobian actions. On the finest grid the
+matrix-free method needs 40 times fewer operations and 30 times less memory, and the dense
+factorisation is out of reach. For a PDE in two or three spatial dimensions ``n_x`` is the number of
+spatial degrees of freedom, ``10^{4}`` to ``10^{6}``, and the banded factorisation, at ``n_x^3 M``
+operations, is impossible, as already noted in Lasagna (2018); there only matrix-free methods
+remain, and their cost is set by the number of Jacobian actions, that is, by the preconditioner.
+
 ## References
 
 - P. Cvitanović, R. L. Davidchack and E. Siminos, *On the state space geometry of the
   Kuramoto–Sivashinsky flow in a periodic domain*, SIAM J. Appl. Dyn. Syst. 9, 1–33 (2010).
 - R. S. Dembo, S. C. Eisenstat and T. Steihaug, *Inexact Newton methods*, SIAM J. Numer. Anal. 19,
   400–408 (1982).
+- D. Lasagna, *Sensitivity analysis of chaotic systems using unstable periodic orbits*, SIAM J. Appl.
+  Dyn. Syst. 17, 547–580 (2018).
 - A.-K. Kassam and L. N. Trefethen, *Fourth-order time-stepping for stiff PDEs*, SIAM J. Sci.
   Comput. 26, 1214–1233 (2005).

@@ -142,7 +142,7 @@ Without preconditioner the picture is different. For ``\tau \le 10^{-2}`` the co
 256 actions for ``K = 10`` and 496 for ``K = 20``: four Newton iterations, each with a Krylov space
 that spans the whole problem, 64 or 124 vectors, because GMRES does not reduce the residual until it
 does. The tolerance then makes no difference, the solve is exact. For looser tolerances the cost
-grows by more than an order of magnitude, up to ``1.3 \times 10^{4}`` actions at ``K = 20``: the
+grows by more than an order of magnitude, up to about ``8 \times 10^{3}`` actions at ``K = 20``: the
 plateau of the inner solve ends at relative residuals between ``10^{-1}`` and ``10^{-2}``, so that a
 loose tolerance stops GMRES early, on the plateau, with a poor step; the number of Newton iterations
 is then the same as with the preconditioner, but each of them costs many more actions. The time,

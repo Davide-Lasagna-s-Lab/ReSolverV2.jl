@@ -332,7 +332,8 @@ for (row, (sname, _, tol, _)) in enumerate(starts[[1, 3]])
     decades!(ax1, xs); decades!(ax2, ts)
     decades!(ax1, [rs; tol]; axis=:y); decades!(ax2, [rs; tol]; axis=:y)
     linkyaxes!(ax1, ax2)
-    row == 1 && axislegend(ax1; position=:lb, labelsize=11)
+    # the legend in the lower left corner of the last panel, which the curves leave empty
+    row == 2 && axislegend(ax2; position=:lb, labelsize=11)
 end
 
 save(joinpath(@__DIR__, "hybrid.png"), fig)

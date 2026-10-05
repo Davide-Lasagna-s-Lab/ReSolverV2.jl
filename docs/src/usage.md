@@ -237,7 +237,10 @@ A sequence of hooksteps followed by Newton steps with a fast decrease of the res
 pattern: far from the solution the trust region limits the step, and the linear model, solved only
 in part, is used to choose a good direction of descent; close to it the full Newton step is taken
 and the convergence becomes quadratic, or linear with ratio `krylov_tol` if the Newton systems are
-solved loosely.
+solved loosely. If every trial step is rejected until the radius falls to the level of rounding, the
+hookstep stops and, with `verbose=true`, prints `trust region collapsed`: no step in the Krylov
+space reduces the residual. This happens when `krylov_dim` is too small for the Newton systems to
+be solved to any useful accuracy (see [L-BFGS against the hookstep](@ref)).
 
 Some practical guidance, from the examples:
 

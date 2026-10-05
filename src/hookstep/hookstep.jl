@@ -172,7 +172,11 @@ function solve!(     x::Orbit,
             end
 
             # rejected: give up if the trust region has collapsed, otherwise a shorter hookstep
-            Δ < eps() * norm(x) && return x
+            if Δ < eps() * norm(x)
+                verbose && println(io, "  trust region collapsed: no step in the Krylov space reduces ‖r‖")
+                objective(F, x)
+                return x
+            end
             y, at_boundary = _hookstep(H, g, Δ)
             rejected += 1
         end
