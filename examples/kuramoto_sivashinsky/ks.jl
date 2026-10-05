@@ -233,15 +233,19 @@ end
 function (op::KSLinearised)(out::KSField, v::KSField)
     g = op.g
 
-    # ---- advection about U, on the grid ----
+    # ---- coefficients of the argument ----
+    transform!(op.v̂, v)
+
+    # ---- advection about U, on the grid: U ∂x w for L⁺, with ∂x w from the coefficients of w;
+    #      U v for L, differentiated below ----
     if op.adjoint
-        ddx!(op.w, v)
-        op.w.data .*= op.U.data          # U ∂x w
+        op.ŵ.data .= (im .* g.k) .* op.v̂.data
+        transform!(op.w, op.ŵ)
+        op.w.data .*= op.U.data
     else
-        op.w.data .= op.U.data .* v.data # U v, differentiated below
+        op.w.data .= op.U.data .* v.data
     end
 
-    transform!(op.v̂, v)
     transform!(op.ŵ, op.w)
 
     # ---- linear part and advection, mean pinned ----

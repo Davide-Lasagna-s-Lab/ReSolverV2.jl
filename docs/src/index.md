@@ -125,7 +125,7 @@ three iterations. The search costs 441 Jacobian actions.
 Pages = ["usage.md",
          "theory/formulation.md", "theory/optimisation.md", "theory/root_finding.md",
          "theory/preconditioning.md",
-         "examples/lorenz.md", "examples/kuramoto_sivashinsky.md",
+         "examples/lorenz.md", "examples/kuramoto_sivashinsky.md", "examples/methods.md",
          "api.md"]
 Depth = 1
 ```

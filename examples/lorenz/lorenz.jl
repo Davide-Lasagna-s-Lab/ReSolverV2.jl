@@ -113,18 +113,31 @@ struct LorenzLinearised
     LorenzLinearised(K::Int; adjoint::Bool=false) = new(zeros(3, 4K + 1), adjoint)
 end
 
+# The Jacobian of the Lorenz system at (x, y, z) is
+#
+#     J = [ -σ      σ     0
+#           ρ - z  -1    -x
+#           y       x    -β ],
+#
+# applied to the components (a, b, c) of w at every point, written out to avoid allocations.
 function (op::LorenzLinearised)(out::LorenzField, v::LorenzField)
     w = topoints(v)
 
     for j in axes(w, 2)
         x, y, z = op.U[1, j], op.U[2, j], op.U[3, j]
+        a, b, c = w[1, j], w[2, j], w[3, j]
 
-        # ---- Jacobian of the Lorenz system at (x, y, z) ----
-        J = [ -σ     σ    0
-             ρ - z  -1   -x
-               y     x   -β ]
-
-        w[:, j] .= (op.adjoint ? transpose(J) : J) * w[:, j]
+        if op.adjoint
+            # ---- Jᵀ w ----
+            w[1, j] = -σ * a + (ρ - z) * b + y * c
+            w[2, j] =  σ * a - b + x * c
+            w[3, j] = -x * b - β * c
+        else
+            # ---- J w ----
+            w[1, j] = σ * (b - a)
+            w[2, j] = (ρ - z) * a - b - x * c
+            w[3, j] = y * a + x * b - β * c
+        end
     end
 
     return tocoefficients!(out, w)
