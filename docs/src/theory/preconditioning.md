@@ -4,7 +4,7 @@ Both methods converge at a rate set by the spectrum of the linearised residual. 
 which periodic orbits matter, that spectrum is spread over many decades, and without a
 preconditioner neither L-BFGS nor the Krylov solver of the hookstep makes useful progress. This
 page explains why, how a preconditioner enters the two methods, and what is known about choosing
-it. The [Examples](@ref "Lorenz system") measure the effect of several choices. Equations of the
+it. The [Examples](../examples/lorenz.md) measure the effect of several choices. Equations of the
 other theory pages are cited as (F*n*) for the [Space-time formulation](@ref), (O*n*) for
 [Search by optimisation](@ref) and (R*n*) for [Search by root finding](@ref).
 
