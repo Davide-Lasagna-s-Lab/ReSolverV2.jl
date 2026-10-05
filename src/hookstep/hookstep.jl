@@ -127,7 +127,8 @@ function solve!(     x::Orbit,
         g   = [β]
 
         H      = arn.H
-        krylov = Float64[] # relative residual of the GMRES solution after each Arnoldi step
+        krylov = Float64[]                       # relative residual of the GMRES solution
+        qr     = (c=Float64[], s=Float64[], γ=[β]) # Givens QR of H, updated one column at a time
 
         for _ in 1:krylov_dim
             # one more basis vector, one more column of H, one more entry of g
@@ -137,7 +138,7 @@ function solve!(     x::Orbit,
             # least-squares (GMRES) solution in the current space: stop once it solves the Newton
             # system well enough. The criterion ignores the trust region: on its boundary the
             # residual of the hookstep stalls at a level set by Δ, which no larger space can lower
-            push!(krylov, norm(g - H * (H \ g)) / β)
+            push!(krylov, _givens!(qr, H[:, end]) / β)
             krylov[end] < krylov_tol && break
 
             # breakdown: the new direction lies in the space, which no further step can enlarge
@@ -198,6 +199,30 @@ function solve!(     x::Orbit,
     objective(F, x)
 
     return x
+end
+
+
+# Residual of the least-squares problem min ‖g - H y‖ after a new column h of the upper Hessenberg
+# matrix H: the previous Givens rotations are applied to h, a new one zeroes its last entry and
+# rotates the right-hand side γ, whose last entry is the residual. O(k) operations per column,
+# against O(k³) for solving the problem again.
+function _givens!(qr, h::AbstractVector)
+    c, s, γ = qr
+    k       = length(h) - 1
+
+    # ---- previous rotations ----
+    for j in 1:k - 1
+        h[j], h[j + 1] = c[j] * h[j] + s[j] * h[j + 1], -s[j] * h[j] + c[j] * h[j + 1]
+    end
+
+    # ---- new rotation, and the rotated right-hand side ----
+    ρ = hypot(h[k], h[k + 1])
+    push!(c, ρ > 0 ? h[k] / ρ : 1.0)
+    push!(s, ρ > 0 ? h[k + 1] / ρ : 0.0)
+    push!(γ, -s[k] * γ[k])
+    γ[k] *= c[k]
+
+    return abs(γ[k + 1])
 end
 
 

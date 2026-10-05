@@ -397,49 +397,87 @@ convergence study, and the jacobian one is the better choice for the hookstep al
 
 ## Cost compared with direct solvers
 
-The matrix-free hookstep never forms the Jacobian. How does it compare with Newton's method with
-a direct solver, which forms and factorises it? An estimate of the arithmetic and of the memory of a
-search that converges in 3 Newton iterations, as from the close start of the convergence study,
-for three ways of solving the Newton systems:
+The matrix-free hookstep never forms the Jacobian. The alternative is Newton's method with a direct
+solver, which forms and factorises it. This section compares the two, in theory and in practice,
+with the direct method of VaPOrE.jl, used by Lasagna (2018) for tens of thousands of orbits of the
+Kuramoto–Sivashinsky and Lorenz systems and by Lasagna (2020) for orbits two orders of magnitude
+longer than the shortest. The script is `examples/kuramoto_sivashinsky/direct.jl`.
 
-- **matrix-free**, as in this package, with the jacobian preconditioner: about 47 Arnoldi steps per
-  Newton iteration, each one Jacobian action, about nine real FFTs of the space-time grid with the
-  derivatives and the preconditioner, and the orthogonalisation of the new Krylov vector, done twice;
-  the memory is that of the Krylov basis;
-- **dense**, with the same spectral discretisation: the Jacobian is a dense ``N \times N`` matrix,
-  because spectral derivatives couple all the points; forming it takes ``N`` Jacobian actions, and
-  its LU factorisation ``2N^3/3`` operations;
-- **banded**, as in Lasagna (2018, appendix B): fourth-order centred finite differences in time on
-  ``M`` points, with the spatial Jacobian a dense ``n_x \times n_x`` block at each time; the Newton
-  matrix is cyclic block pentadiagonal, bordered by the phase condition, and is solved by a banded LU
-  factorisation, with lower and upper bandwidths ``2n_x``, about ``16\,n_x^3 M`` operations and
-  ``6\,n_x^2 M`` stored entries, plus a low-rank correction for the corner blocks of the periodic
-  boundary conditions. The estimate takes ``M = N_s``, which is optimistic: finite differences
-  need more points in time than Fourier modes for the same accuracy.
+**The direct method.** The orbit is sampled at ``M`` rescaled times, and the derivative in time is a
+centred finite difference of order ``p = 2, \dots, 10``, a stencil of ``p + 1`` points. The Jacobian
+of the spatial right-hand side at each time is a dense ``N_x \times N_x`` block, since the
+derivatives in space are spectral. The Newton matrix, of size ``n = N_x M + 2``, is then block
+banded and cyclic: one dense block on the diagonal, ``p`` scaled identities off the diagonal for the
+stencil, wrapped around by the periodicity, and two borders, the columns of the log-frequency and
+of the drift speed and the two phase conditions, here on the first time level, as in VaPOrE.jl. It is
+factorised by sparse LU (UMFPACK), once per Newton iteration.
 
-| grid | unknowns | matrix-free: operations | memory | dense: operations | memory | banded: operations | memory |
+**Accuracy.** Finite differences need more points in time than Fourier modes for the same accuracy.
+For each order, the number of times ``M`` is chosen so that the finite-difference derivative of the
+converged orbit is accurate to ``10^{-6}``; Newton's method with the direct solver, started from the
+spectral orbit sampled at these times, then converges to a period that agrees with the spectral one
+to the expected accuracy:
+
+| order ``p`` | times ``M`` | ``T - T_{\text{spectral}}`` | unknowns ``n`` | ``\mathrm{nnz}(A)`` | ``\mathrm{nnz}(LU)`` | LU memory | factorisation |
 |---|---|---|---|---|---|---|---|
-| base | 1 619 | ``1.0 \times 10^{8}`` | 0.7 MB | ``8.4 \times 10^{9}`` | 21 MB | ``8.4 \times 10^{7}`` | 2.6 MB |
-| ``\times 2`` | 6 307 | ``4.2 \times 10^{8}`` | 2.7 MB | ``5.1 \times 10^{11}`` | 0.32 GB | ``1.3 \times 10^{9}`` | 20 MB |
-| ``\times 4`` | 24 899 | ``1.8 \times 10^{9}`` | 11 MB | ``3.0 \times 10^{13}`` | 5.0 GB | ``2.0 \times 10^{10}`` | 154 MB |
-| ``\times 8`` | 98 947 | ``7.8 \times 10^{9}`` | 42 MB | ``2.0 \times 10^{15}`` | 78 GB | ``3.1 \times 10^{11}`` | 1.2 GB |
+| 2 | 5 451 | — | | | | | |
+| 4 | 267 | ``-8.7 \times 10^{-7}`` | 8 813 | ``3.4 \times 10^{5}`` | ``2.0 \times 10^{6}`` | 32 MB | 0.08 s |
+| 6 | 107 | ``-2.3 \times 10^{-7}`` | 3 533 | ``1.5 \times 10^{5}`` | ``1.3 \times 10^{6}`` | 21 MB | 0.03 s |
+| 8 | 73 | ``-5.0 \times 10^{-8}`` | 2 411 | ``1.0 \times 10^{5}`` | ``1.2 \times 10^{6}`` | 19 MB | 0.03 s |
+| 10 | 61 | ``-9.4 \times 10^{-9}`` | 2 015 | ``9.1 \times 10^{4}`` | ``1.2 \times 10^{6}`` | 19 MB | 0.04 s |
 
-*Floating-point operations of three Newton iterations, and memory of the largest arrays, estimated
-as described above. The dense column omits the cost of forming the Jacobian, ``N`` actions per
-iteration, which is smaller than that of its factorisation.*
+*Base grid, ``N_x = 33``. The spectral discretisation uses ``N_s = 49`` times, with an accuracy far
+better than ``10^{-6}``. Second order would need more than 5 000 times and is not run.*
 
-On the base grid the banded solver of the time-domain formulation is as cheap as the matrix-free
-method, and cheaper in operations: for a one-dimensional PDE at modest resolution, a direct solver
-that exploits the sparsity in time is an excellent choice, robust and independent of any
-preconditioner. The two approaches scale differently, though. Refining the grid by two in both
-directions multiplies the cost of the banded factorisation by 16, ``n_x^3`` times ``M``, and its
-memory by 8, against a factor of about 4.3 for the matrix-free method, whose cost grows as the
-number of unknowns times a logarithm, at a fixed number of Jacobian actions. On the finest grid the
-matrix-free method needs 40 times fewer operations and 30 times less memory, and the dense
-factorisation is out of reach. For a PDE in two or three spatial dimensions ``n_x`` is the number of
-spatial degrees of freedom, ``10^{4}`` to ``10^{6}``, and the banded factorisation, at ``n_x^3 M``
-operations, is impossible, as already noted in Lasagna (2018); there only matrix-free methods
-remain, and their cost is set by the number of Jacobian actions, that is, by the preconditioner.
+High orders pay off: the eighth and tenth orders need only 50% more times than the spectral
+discretisation, and the factorisation is cheap, a few hundredths of a second on the base grid.
+
+**Theoretical cost.** With ``N_x`` unknowns per time and a stencil of ``p + 1`` points, the matrix is
+banded with lower and upper bandwidths ``b = (p/2)\,N_x``, apart from the wrap-around and the borders,
+which add a low-rank correction. Banded LU with partial pivoting costs about
+``2 n b (2 b) = p^2 N_x^3 M`` operations and stores about ``3 b n = \tfrac32\, p\, N_x^2 M``
+entries: refining the spatial grid by two multiplies the memory by four and the operations by eight,
+at a fixed ``M``. The matrix-free hookstep costs, per Newton iteration, a number of Jacobian actions
+independent of the resolution, about 47 here, each of a few FFTs of the space-time grid,
+``O(N_x N_s \log(N_x N_s))`` operations, plus the orthogonalisation of the Krylov basis,
+``O(k^2 N_x N_s)`` for ``k`` vectors, and stores ``k + 1`` vectors of ``N_x N_s`` entries.
+
+**Measured cost.** One Newton iteration, on grids refined in space, the direct method with order 10
+and ``M = 61``, the matrix-free hookstep with ``N_s = 49`` and the jacobian preconditioner:
+
+| ``N_x`` | direct: ``n`` | LU memory | assemble + factorise + solve | matrix-free: ``n`` | Krylov memory | time per iteration |
+|---|---|---|---|---|---|---|
+| 33 | 2 015 | 19 MB | 0.05 s | 1 619 | 0.6 MB | 0.010 s |
+| 65 | 3 967 | 72 MB | 0.13 s | 3 187 | 1.3 MB | 0.019 s |
+| 129 | 7 871 | 282 MB | 0.70 s | 6 323 | 2.5 MB | 0.062 s |
+| 257 | 15 679 | 1.1 GB | 5.2 s | 12 595 | 5.0 MB | 0.20 s |
+
+*Direct method: memory of the LU factors, 16 bytes per nonzero; time of one iteration. Matrix-free:
+memory of the Krylov basis, 50 vectors; wall-clock time per Newton iteration.*
+
+The measurements follow the theory: from one grid to the next the memory of the factors grows by
+3.8, 3.9 and 4.0, and the time of the factorisation by 3.7, 5.3 and 8.3, reaching the factor of 8 of
+the theory, at about ``2 \times 10^{10}`` operations per second on the finest grid, the efficiency
+of the dense kernels of the supernodal factorisation. The matrix-free method, with 47 Jacobian
+actions per Newton iteration on every grid, is 5 times faster on the base grid and 26 times faster
+on the finest, with 30 to 220 times less memory.
+
+**Spectral in time.** With Fourier modes in time, as in this package, the Jacobian is dense, since
+the spectral derivative couples every time to every other: ``n^2`` entries and ``2n^3/3`` operations
+for its LU factorisation, ``2.6 \times 10^{6}`` entries and ``2.8 \times 10^{9}`` operations on the
+base grid, ``1.0 \times 10^{10}`` entries (78 GB) and ``6.5 \times 10^{14}`` operations on the grid
+refined eight times in both directions. A direct solver is practical only with finite differences
+in time, which is what VaPOrE.jl does.
+
+**Conclusions.** For a one-dimensional problem at moderate resolution, the direct solver with
+high-order finite differences in time is fast, robust and independent of any preconditioner: on the
+base grid it costs about as much as the matrix-free method. Its cost grows as ``N_x^3 M`` and its
+memory as ``N_x^2 M``, against roughly ``N_x N_s \log(N_x N_s)`` and ``N_x N_s`` for the matrix-free
+method with a good preconditioner. For a PDE in two or three spatial dimensions, ``N_x`` is the
+number of spatial degrees of freedom, ``10^{4}`` to ``10^{6}``, and the banded factorisation, already
+at 1.1 GB for 257 unknowns per time, is out of reach, as noted in Lasagna (2018); only matrix-free
+methods remain, and their cost is set by the number of Jacobian actions, that is, by the
+preconditioner.
 
 ## References
 
@@ -449,5 +487,7 @@ remain, and their cost is set by the number of Jacobian actions, that is, by the
   400–408 (1982).
 - D. Lasagna, *Sensitivity analysis of chaotic systems using unstable periodic orbits*, SIAM J. Appl.
   Dyn. Syst. 17, 547–580 (2018).
+- D. Lasagna, *Sensitivity of long periodic orbits of chaotic systems*, Phys. Rev. E 102, 052220
+  (2020).
 - A.-K. Kassam and L. N. Trefethen, *Fourth-order time-stepping for stiff PDEs*, SIAM J. Sci.
   Comput. 26, 1214–1233 (2005).

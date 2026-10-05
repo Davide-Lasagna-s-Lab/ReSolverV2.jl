@@ -17,6 +17,14 @@
 # Σ over the coefficients of the full spectrum, so that the derivatives are exactly skew-adjoint and
 # the adjoint operator is exact.
 #
+# Relative periodic orbits. Translations along x are a continuous symmetry, handled as in the other
+# examples by a drift speed. Translations along y by multiples of 2π/kf, the forcing wavelength, are
+# a discrete symmetry: an orbit may repeat after a period up to such a shift ℓy,
+# ω(x, y, t + T) = ω(x + ℓx, y + ℓy, t). The grid keyword `yshift` = ℓy makes the space-time field
+# periodic up to that shift, â(kx, ky, s + 2π) = exp(i ky ℓy) â(kx, ky, s): the derivative in s acts
+# on the periodic part exp(-i φ s) â, φ = ky ℓy/2π, as a multiplication by i(n + φ) on its Fourier
+# modes n. Only ∂s and the preconditioner change; ∂s stays exactly skew-adjoint.
+#
 # The model runs on the CPU or on a GPU: the arrays of the grid and of the fields are built with the
 # constructor `array` given to the grid, `Array` by default or e.g. `CuArray` with CUDA.jl loaded,
 # the FFTs go through AbstractFFTs, and the operators use broadcasting and views only, no scalar
@@ -24,7 +32,8 @@
 #
 # The file provides what a ReSolverV2 System needs, and the pieces to build an initial guess:
 #
-#     KFGrid(n, Ns; Re, kf, array)     grid: wavenumbers, mask, FFT plans, on the device
+#     KFGrid(n, Ns; Re, kf, yshift,    grid: wavenumbers, mask, FFT plans, on the device
+#            array)
 #     KFField(g)                       space-time Fourier field, zero
 #     ddx!(out, ω), dds!(out, ω)       derivatives along x and in rescaled time s
 #     KFNonlinear, KFLinearised        N(ω), its linearisation and adjoint
@@ -47,7 +56,7 @@ import ReSolverV2: precondition!, precondition_adjoint!
 # active and storage cutoffs, and points of the physical grid, as in OpenKolmogorovFlow.jl
 up_dealias_size(n::Int) = n + n >> 1
 
-struct KFGrid{R, C, FP, IP, FS, IS, A}
+struct KFGrid{R, C, T, FP, IP, FS, IS, A}
           n::Int     # active cutoff
           m::Int     # storage cutoff, m = n + n÷2
           M::Int     # physical points per direction, 2m + 2
@@ -57,6 +66,9 @@ struct KFGrid{R, C, FP, IP, FS, IS, A}
          kx::R       # wavenumbers along x, 0, …, n, as an (n+1) × 1 × 1 array
          ky::R       # wavenumbers along y in FFT order, as a 1 × (2n+1) × 1 array
           s::R       # temporal wavenumbers in FFT order, as a 1 × 1 × Ns array
+     yshift::Float64 # shift along y after one period, ℓy
+          σ::R       # temporal wavenumbers of the periodic part, n + ky ℓy/2π, 1 × (2n+1) × Ns
+      twist::T       # exp(i ky ℓy s/2π), the phases of the shift, 1 × (2n+1) × Ns
        mask::R       # 0 on the mean mode, 1 elsewhere
      invlap::R       # inverse Laplacian -1/(kx² + ky²), zero on the mean mode
     forcing::C       # coefficients of the forcing -kf cos(kf y)
@@ -66,7 +78,7 @@ struct KFGrid{R, C, FP, IP, FS, IS, A}
      timeinv::IS     # its unnormalised inverse
       array::A       # constructor of the arrays on the device, Array or e.g. CuArray
 
-    function KFGrid(n::Int, Ns::Int; Re::Real=40, kf::Int=4, array=Array)
+    function KFGrid(n::Int, Ns::Int; Re::Real=40, kf::Int=4, yshift::Real=0, array=Array)
 
         # ---- input checks ----
         isodd(Ns) ||
@@ -80,6 +92,11 @@ struct KFGrid{R, C, FP, IP, FS, IS, A}
         kx = reshape(collect(0.0:n), :, 1, 1)
         ky = reshape(Float64[0:n; -n:-1], 1, :, 1)
         s  = reshape(fftfreq(Ns, Ns), 1, 1, :)
+
+        # ---- shifted temporal wavenumbers and phases of the shift along y ----
+        φ     = ky .* (yshift / 2π)
+        σ     = s .+ φ
+        twist = cis.(φ .* reshape((0:Ns - 1) .* (2π / Ns), 1, 1, :))
 
         # ---- mask of the mean mode and inverse Laplacian ----
         k²     = kx.^2 .+ ky.^2
@@ -101,10 +118,11 @@ struct KFGrid{R, C, FP, IP, FS, IS, A}
         timefwd = plan_fft(a, 3)
         timeinv = plan_bfft(a, 3)
 
-        dev = array.((kx, ky, s, mask, invlap))
+        dev = array.((kx, ky, s))
 
         return new{typeof(dev[1]),
                    typeof(a),
+                   typeof(array(twist)),
                    typeof(physfwd),
                    typeof(physinv),
                    typeof(timefwd),
@@ -116,6 +134,11 @@ struct KFGrid{R, C, FP, IP, FS, IS, A}
                                   Re,
                                   kf,
                                   dev...,
+                                  Float64(yshift),
+                                  array(σ),
+                                  array(twist),
+                                  array(mask),
+                                  array(invlap),
                                   array(forcing),
                                   physfwd,
                                   physinv,
@@ -228,13 +251,14 @@ end
 # out = ∂x u, a multiplication of the coefficients
 ddx!(out::KFField, u::KFField) = (out.data .= im .* u.g.kx .* u.data; out)
 
-# out = ∂s u, by FFTs along s
+# out = ∂s u, by FFTs along s of the periodic part exp(-i φ s) u
 function dds!(out::KFField, u::KFField)
     g = u.g
 
-    mul!(out.data, g.timefwd, u.data)
-    out.data .*= im .* g.s ./ g.Ns
-    out.data .= g.timeinv * out.data
+    out.data .= conj.(g.twist) .* u.data
+    out.data .= g.timefwd * out.data
+    out.data .*= im .* g.σ ./ g.Ns
+    out.data .= g.twist .* (g.timeinv * out.data)
 
     return out
 end
@@ -401,7 +425,7 @@ struct KFPreconditioner{C}
         c₀ = length(x₀.p) > 1 ? x₀.p[2] : 0.0
 
         # ---- field; 1 on the mean mode ----
-        A = @. im * (ω₀ * g.s - c₀ * g.kx) + (g.kx^2 + g.ky^2) / g.Re
+        A = @. im * (ω₀ * g.σ - c₀ * g.kx) + (g.kx^2 + g.ky^2) / g.Re
         B = kind === :jacobian ? A : @.(1 + abs(A) + 0im)
         β = @. ifelse(g.mask == 0, one(B), B)
 
@@ -414,13 +438,15 @@ struct KFPreconditioner{C}
     end
 end
 
-# B is diagonal in space-time Fourier: B⁻⁺ divides by the complex conjugate multipliers
+# B is diagonal in space-time Fourier, on the periodic part exp(-i φ s) of the field: B⁻⁺ divides by
+# the complex conjugate multipliers
 function precondition!(out::Orbit, B::KFPreconditioner, p::Orbit)
     g = p.a.g
 
-    mul!(out.a.data, g.timefwd, p.a.data)
+    out.a.data .= conj.(g.twist) .* p.a.data
+    out.a.data .= g.timefwd * out.a.data
     out.a.data .*= g.mask ./ (B.β .* g.Ns)
-    out.a.data .= g.timeinv * out.a.data
+    out.a.data .= g.twist .* (g.timeinv * out.a.data)
 
     out.p .= p.p ./ B.s
 
@@ -430,9 +456,10 @@ end
 function precondition_adjoint!(out::Orbit, B::KFPreconditioner, p::Orbit)
     g = p.a.g
 
-    mul!(out.a.data, g.timefwd, p.a.data)
+    out.a.data .= conj.(g.twist) .* p.a.data
+    out.a.data .= g.timefwd * out.a.data
     out.a.data .*= g.mask ./ (conj.(B.β) .* g.Ns)
-    out.a.data .= g.timeinv * out.a.data
+    out.a.data .= g.twist .* (g.timeinv * out.a.data)
 
     out.p .= p.p ./ B.s
 
