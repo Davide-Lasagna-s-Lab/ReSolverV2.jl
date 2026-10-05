@@ -102,18 +102,39 @@ written in the frame drifting with ``c = -\ell/T_0``.
 
 ## The shortest pre-periodic orbit
 
-From this guess, 300 iterations of L-BFGS followed by the hookstep, with ``N_x \times N_s = 33 \times
-49``, converge with the linear preconditioner described [below](#Preconditioners), and fail without it:
+From this guess, with ``N_x \times N_s = 33 \times 49``, the hookstep alone converges, without
+L-BFGS, provided the Newton systems are preconditioned. With Krylov spaces of at most 150 vectors,
+``\tau = 10^{-3}`` and an initial trust-region radius ``0.1``:
 
-| | ``\lVert r\rVert`` after L-BFGS | ``\lVert r\rVert`` after the hookstep | orbit |
-|---|---|---|---|
-| no preconditioner | ``2.2 \times 10^{-2}`` | ``2.0 \times 10^{-2}`` after 20 iterations | not converged |
-| preconditioner | ``1.5 \times 10^{-3}`` | ``2.0 \times 10^{-12}`` | ``T = 20.5057`` |
+| preconditioner (see [below](#Preconditioners)) | Newton iterations | of which hooksteps | Jacobian actions | final ``\lVert r\rVert`` | orbit |
+|---|---|---|---|---|---|
+| none | 50 | — | 7500 | ``2.5 \times 10^{-2}`` | not converged |
+| linear | 13 | 8 | 1863 | ``2.9 \times 10^{-14}`` | ``T = 20.5057`` |
+| jacobian | 9 | 5 | 441 | ``1.2 \times 10^{-12}`` | ``T = 20.5057`` |
+
+*From ``\lVert r\rVert = 7.8 \times 10^{-2}``; at most 50 Newton iterations.*
 
 ![Shortest pre-periodic orbit of Kuramoto–Sivashinsky on L = 22](../assets/ks_example.png)
 
-*Left and centre: the initial guess and the converged orbit over one period, in the fixed frame.
-Right: residual against the iterations, L-BFGS up to the dashed line, the hookstep after it.*
+*Top: the initial guess and the converged orbit over one period, in the fixed frame. Middle and
+bottom: the search without preconditioner, stopped after 10 iterations, and with the jacobian
+preconditioner; left, the residual against the Newton iterations, with hooksteps on the boundary of
+the trust region (open symbols) and full Newton steps (filled); right, the relative residual of the
+GMRES solution of the Newton system against the Arnoldi steps, one curve per Newton iteration, with
+the tolerance ``10^{-3}`` dashed.*
+
+Without preconditioner every Newton system stalls at the largest Krylov space, with a relative
+residual between ``0.3`` and ``1``: the steps, least-squares solutions in a Krylov space far too
+small, reduce the residual very little, by a factor of three in 50 iterations. With the jacobian
+preconditioner each Newton system is solved to ``10^{-3}`` in 45 to 55 Arnoldi steps, at every
+iteration, and the search has two phases. In the first five iterations the Newton step is longer
+than the trust region, ``\lVert B\,\delta p\rVert`` between ``0.3`` and ``1.5`` against a radius of
+``0.1`` to ``0.2``, and the hookstep takes the best part of it that the trust region allows; the
+residual decreases slowly, from ``7.8 \times 10^{-2}`` to ``1.5 \times 10^{-2}``. From the sixth
+iteration the full Newton step lies inside the trust region, and the residual drops to
+``1.2 \times 10^{-3}``, ``1.5 \times 10^{-6}``, ``1.2 \times 10^{-9}`` and ``1.2 \times 10^{-12}``,
+converging linearly with ratio close to ``\tau = 10^{-3}`` (see [Tolerance of the inner
+solve](#Tolerance-of-the-inner-solve)).
 
 The converged orbit has zero mean, zero drift speed and period ``T = 20.505745``. It is the
 shortest *pre-periodic* orbit of the system, ``\mathrm{PPO}_{10.25}`` in the notation of Cvitanović,
@@ -337,7 +358,7 @@ the search of the [shortest pre-periodic orbit](#The-shortest-pre-periodic-orbit
 preconditioner, 300 iterations of L-BFGS reach ``\lVert r\rVert = 7.8 \times 10^{-3}``, against
 ``1.5 \times 10^{-3}`` with the linear one. L-BFGS works in the metric ``M = B^+B``, with symbol
 ``|\hat A_0|^2``, as small as ``0.075^2 \approx 5.6 \times 10^{-3}`` on the unstable wavenumbers:
-the gradient ``M^{-1}\nabla J`` amplifies these modes by a factor of up to 180 over the others, and
+the gradient ``M^{-1}\nabla R`` amplifies these modes by a factor of up to 180 over the others, and
 the line search must shorten every step to contain them. The linear preconditioner, bounded below by
 one, gives a better-balanced metric (see [Preconditioning](@ref)). The examples therefore use the
 linear preconditioner, the default of `KSPreconditioner`, for the search of the orbit and the

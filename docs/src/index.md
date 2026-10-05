@@ -11,17 +11,27 @@ them is hard because they are unstable: integrating forward in time from a nearb
 shooting method does, amplifies every error exponentially over the period, and the longer or more
 unstable the orbit, the worse the problem.
 
-ReSolverV2 avoids time integration altogether. It treats a whole orbit as a single unknown: the
-field over one period, written in terms of the rescaled time ``s = \omega t \in [0, 2\pi)``, together
-with the frequency ``\omega = 2\pi/T`` and the drift speeds ``c_i``. An orbit is a zero of the
-space-time residual
+ReSolverV2 avoids time integration altogether. Consider a system
+
+```math
+\partial_t u = N(u) ,
+```
+
+with ``u`` a function of time and of an arbitrary number of spatial coordinates, possibly
+equivariant under translations along some of them. A relative periodic orbit of period ``T``
+repeats after ``T`` up to shifts ``\ell_i`` along these directions,
+``u(x_i + \ell_i, t + T) = u(x_i, t)``; in the frame moving with the drift speeds ``c_i = -\ell_i/T``
+it is periodic, and a periodic orbit is the case without drift. ReSolverV2 treats the whole orbit as
+a single unknown: the field over one period, written in terms of the rescaled time
+``s = \omega t \in [0, 2\pi)``, together with the frequency ``\omega = 2\pi/T`` and the drift
+speeds ``c_i``. An orbit is a zero of the space-time residual
 
 ```math
 r(u, \omega, c) = \omega\,\partial_s u - \sum_i c_i\,\partial_i u - N(u) ,
 ```
 
 which measures, at every point in space and rescaled time, how far the candidate field is from
-satisfying the equation ``\partial_t u = N(u)``. Two methods drive this residual to zero:
+satisfying the equation. Two methods are implemented in this package to drive this residual to zero:
 
 | method | solves | uses | best |
 |---|---|---|---|
@@ -45,10 +55,28 @@ satisfying the equation ``\partial_t u = N(u)``. Two methods drive this residual
 
 ## A first example
 
-An orbit of the Kuramoto–Sivashinsky equation on a periodic domain of length ``L = 22``,
-discretised with Fourier modes in space and rescaled time, searched for as a relative periodic orbit
-from a near-recurrence of a chaotic trajectory; the search finds the shortest pre-periodic orbit of
-the system, traversed twice (see [Kuramoto–Sivashinsky equation](@ref) for the full analysis):
+The Kuramoto–Sivashinsky equation
+
+```math
+\partial_t u = -u\,\partial_x u - \partial_x^2 u - \partial_x^4 u , \qquad x \in [0, L) ,
+```
+
+with periodic boundary conditions, ``u(x + L, t) = u(x, t)``, is the simplest partial differential
+equation with spatio-temporal chaos. It was derived independently by Kuramoto (1976), for the phase
+of oscillations in reaction–diffusion systems, and by Sivashinsky (1977), for the instability of
+laminar flame fronts, and it also describes thin films flowing down an inclined plane. The
+second-derivative term, with negative diffusion, destabilises the large scales, the fourth-derivative
+term damps the small ones, and the nonlinear term transfers energy between them. On a domain of
+length ``L = 22`` the dynamics is chaotic but low-dimensional, and its equilibria, travelling waves
+and relative periodic orbits were mapped in detail by Cvitanović, Davidchack & Siminos (2010). The
+equation is equivariant under translations ``u(x) \to u(x + \ell)``, so its recurrent solutions are
+relative periodic orbits, which repeat after a period ``T`` up to a shift ``\ell``.
+
+Here an orbit is searched for from a near-recurrence of a chaotic trajectory, with ``u`` expanded in
+Fourier modes in space and rescaled time, and the Newton–Krylov hookstep converges it with a
+preconditioner built from the linear part of the equation. The search finds the shortest
+pre-periodic orbit of the system, traversed twice (see [Kuramoto–Sivashinsky equation](@ref) for
+the details and the full analysis):
 
 ```julia
 using ReSolverV2
@@ -61,13 +89,35 @@ e, i, m, ℓ = recurrence(U, g, 0.25, (12, 20))        # its best near-recurrenc
 x          = initial_orbit(U, g, 0.25, i, m, ℓ)      # Orbit: field, [log ω, c]
 
 F = System(KSNonlinear(g), KSLinearised(g), KSLinearised(g; adjoint=true), dds!, x;
-           linearise!, ddi=(ddx!,), B=KSPreconditioner(x))
+           linearise!, ddi=(ddx!,), B=KSPreconditioner(x; kind=:jacobian))
 
-solve!(x, F, LBFGS(maxiter=300))
-solve!(x, F, NewtonHookstep(krylov_dim=150))
+solve!(x, F, NewtonHookstep(maxiter=50, krylov_dim=150, Δ=0.1, Δmax=10))
 ```
 
 ![Shortest pre-periodic orbit of Kuramoto–Sivashinsky on L = 22](assets/ks_example.png)
+
+*Top: the initial guess and the converged orbit over one period, in the fixed frame. Middle and
+bottom: the same search without and with the preconditioner; left, the residual against the Newton
+iterations, with hooksteps on the boundary of the trust region (open symbols) and full Newton steps
+(filled); right, the relative residual of the GMRES solution of the Newton system against the
+Arnoldi steps, one curve per Newton iteration, with the tolerance ``10^{-3}`` dashed.*
+
+Without preconditioner GMRES makes almost no progress on any Newton system: after 150 Arnoldi
+steps the relative residual is still between ``0.3`` and ``1``, the Newton steps are poor, and the
+residual of the orbit stalls. With the preconditioner every Newton system is solved to ``10^{-3}`` in
+45 to 55 Arnoldi steps. The first five iterations are nonetheless hooksteps: far from the solution
+the Newton step is longer than the trust region, and only part of it is taken. From the sixth
+iteration the full Newton step is taken, and the residual drops from ``10^{-3}`` to ``10^{-12}`` in
+three iterations. The search costs 441 Jacobian actions.
+
+### References
+
+- Y. Kuramoto and T. Tsuzuki, *Persistent propagation of concentration waves in dissipative media
+  far from thermal equilibrium*, Prog. Theor. Phys. 55, 356–369 (1976).
+- G. I. Sivashinsky, *Nonlinear analysis of hydrodynamic instability in laminar flames — I.
+  Derivation of basic equations*, Acta Astronaut. 4, 1177–1206 (1977).
+- P. Cvitanović, R. L. Davidchack and E. Siminos, *On the state space geometry of the
+  Kuramoto–Sivashinsky flow in a periodic domain*, SIAM J. Appl. Dyn. Syst. 9, 1–33 (2010).
 
 ## Contents
 

@@ -63,9 +63,9 @@ end
 
 @testset "Gradient                                                " begin
     g₁ = similar(x)
-    J  = gradient!(g₁, F, x)
+    R  = gradient!(g₁, F, x)
 
-    @test J ≈ objective(F, x)
+    @test R ≈ objective(F, x)
 
     # ---- directional derivative against central differences ----
     δ  = random_orbit(0.7, -0.3)
@@ -125,11 +125,11 @@ end
     for S in (F, FB), method in (LBFGS(maxiter=5, verbose=false),
                                  NewtonHookstep(maxiter=3, verbose=false))
         y  = copy(x)
-        J₀ = objective(S, y)
+        R₀ = objective(S, y)
 
         solve!(y, S, method)
 
-        @test objective(S, y) < J₀
+        @test objective(S, y) < R₀
     end
 
     # ---- the callback records the residual and can stop the search ----
@@ -155,4 +155,7 @@ end
     @test trace.evaluations[end].jacobian > 0
     @test trace.evaluations[end].precondition > 0
     @test all(isempty, trace.krylov[1:6]) && !any(isempty, trace.krylov[7:8])
+
+    # ---- kinds of step only for the hookstep iterations ----
+    @test all(isempty, trace.step[1:6]) && all(in(("newton", "hook")), trace.step[7:8])
 end

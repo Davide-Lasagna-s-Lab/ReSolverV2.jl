@@ -2,16 +2,16 @@
 # methods need:
 #
 #     residual    r = ω ∂s a - Σᵢ cᵢ ∂ᵢ a - N(a)
-#     objective   J = ½‖r‖²                                   both methods
-#     gradient    ∇J, from the adjoint operator                L-BFGS
-#     jacobian    J δx, from the linearised operator           Newton–Krylov hookstep
+#     objective   R = ½‖r‖²                                   both methods
+#     gradient    ∇R, from the adjoint operator                L-BFGS
+#     jacobian    𝒥 δx, from the linearised operator           Newton–Krylov hookstep
 #
 # With x = (a, ρ, c), ρ = log ω the unknown for the frequency, and ∂ᵢ the derivative along the
 # i-th drift direction,
 #
-#     ∇ₐ J       = -ω ∂s r + Σᵢ cᵢ ∂ᵢ r - L⁺ r
-#     ∂J/∂ρ      =  ω ⟨∂s a, r⟩,     since ∂ω/∂ρ = ω
-#     ∂J/∂cᵢ     = -⟨∂ᵢ a, r⟩
+#     ∇ₐ R       = -ω ∂s r + Σᵢ cᵢ ∂ᵢ r - L⁺ r
+#     ∂R/∂ρ      =  ω ⟨∂s a, r⟩,     since ∂ω/∂ρ = ω
+#     ∂R/∂cᵢ     = -⟨∂ᵢ a, r⟩
 #
 # The gradient uses the skew-adjointness of the derivatives in the inner product, ∂⁺ = -∂.
 #
@@ -158,9 +158,9 @@ function residual!(r::Orbit, F::System, x::Orbit)
 end
 
 """
-    objective(F::System, x::Orbit) -> J
+    objective(F::System, x::Orbit) -> R
 
-`J = ½‖r‖²`. The residual is left in `F.residual`.
+`R = ½‖r‖²`. The residual is left in `F.residual`.
 """
 function objective(F::System, x::Orbit)
     r = residual!(F.residual, F, x)
@@ -172,9 +172,9 @@ end
 # gradient, for L-BFGS                                                         #
 # ---------------------------------------------------------------------------- #
 """
-    gradient!(g::Orbit, F::System, x::Orbit) -> J
+    gradient!(g::Orbit, F::System, x::Orbit) -> R
 
-Write the gradient of `J = ½‖r‖²` into `g` and return `J`. Moves the linearisation point of the
+Write the gradient of `R = ½‖r‖²` into `g` and return `R`. Moves the linearisation point of the
 operators to `x`.
 """
 function gradient!(g::Orbit, F::System, x::Orbit)
@@ -182,7 +182,7 @@ function gradient!(g::Orbit, F::System, x::Orbit)
     F.evaluations.gradient += 1
 
     # ---- residual and linearisation point ----
-    J = objective(F, x)
+    R = objective(F, x)
     r = F.residual.a
     F.linearise!(F.adj, x.a)
 
@@ -207,7 +207,7 @@ function gradient!(g::Orbit, F::System, x::Orbit)
         g.p[1 + i] = -dot(tmp, r)
     end
 
-    return J
+    return R
 end
 
 

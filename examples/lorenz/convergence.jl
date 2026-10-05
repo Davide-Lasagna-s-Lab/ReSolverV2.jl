@@ -176,8 +176,13 @@ for ax in bottom
     ylims!(ax, 1e-4, 2)
     logticks!(ax, 1e-4, 1; axis=:y)
 end
-logticks!(top[2], minimum(jac), maximum(jac))
-logticks!(top[3], minimum(tim), maximum(tim))
+# the cost axes span whole decades, so that every one has a labelled major tick
+for (ax, vals) in zip(top[2:3], (jac, tim))
+    lo = 10.0^floor(log10(minimum(vals)))
+    hi = 10.0^ceil(log10(maximum(vals)))
+    xlims!(ax, lo, hi)
+    logticks!(ax, lo, hi)
+end
 
 # ---- the same residual axis across each row ----
 linkyaxes!(top...)
@@ -201,7 +206,7 @@ fig = Figure(size=(1300, 470), fontsize=13)
 
 panels = ((:jacobian, "Jacobian actions", "Jacobian actions", log10),
           (:time, "time", "time [s]", log10),
-          (:newton, "Newton iterations", "Newton iterations", identity))
+          (:newton, "Newton iterations", "Newton iterations", log10))
 axc    = [Axis(fig[1, j]; title="cost of ‖r‖ < 10⁻¹²: " * title,
                xlabel="tolerance on the Newton system", ylabel, xscale=log10, yscale,
                xreversed=true)
@@ -220,9 +225,13 @@ end
 for ax in axc
     logticks!(ax, minimum(tols), maximum(tols))
 end
-for (ax, field) in zip(axc[1:2], (:jacobian, :time))
+# the logarithmic axes span whole decades, so that every one has a labelled major tick
+for (ax, field) in zip(axc, (:jacobian, :time, :newton))
     vals = filter(isfinite, [getfield(c, field) for c in values(cost)])
-    logticks!(ax, minimum(vals), maximum(vals); axis=:y)
+    lo   = 10.0^floor(log10(minimum(vals)))
+    hi   = 10.0^ceil(log10(maximum(vals)))
+    ylims!(ax, lo, hi)
+    logticks!(ax, lo, hi; axis=:y)
 end
 
 Legend(fig[2, 1:3],

@@ -6,16 +6,18 @@ Developed by Davide Lasagna, University of Southampton.
 
 **Documentation: https://davide-lasagna-s-lab.github.io/ReSolverV2.jl/**
 
-ReSolverV2 treats a whole orbit as a single unknown: the field over one period, written in terms of
-the rescaled time $s = \omega t \in [0, 2\pi)$, together with the frequency $\omega = 2\pi/T$ and the
-drift speeds $c_i$ along directions of symmetry. An orbit is a zero of the space-time residual
+For a system $\partial_t u = N(u)$, possibly equivariant under translations along some spatial
+directions, ReSolverV2 treats a whole periodic or relative periodic orbit as a single unknown: the
+field over one period, written in terms of the rescaled time $s = \omega t \in [0, 2\pi)$, together
+with the frequency $\omega = 2\pi/T$ and the drift speeds $c_i$ along the directions of symmetry. An
+orbit is a zero of the space-time residual
 
 $$
 r(u, \omega, c) = \omega\,\partial_s u - \sum_i c_i\,\partial_i u - N(u),
 $$
 
 so no time integration is needed, and long or strongly unstable orbits are within reach. Two methods
-drive the residual to zero:
+are implemented in this package to drive the residual to zero:
 
 - `LBFGS` minimises $\tfrac12\lVert r\rVert^2$ with a gradient computed from the adjoint operator,
   and is robust far from a solution;
@@ -36,10 +38,12 @@ Pkg.add(url="https://github.com/Davide-Lasagna-s-Lab/ReSolverV2.jl")
 
 ## Example
 
-An orbit of the Kuramoto–Sivashinsky equation on a periodic domain of length $L = 22$, searched for
-as a relative periodic orbit from a near-recurrence of a chaotic trajectory, with the model of
-`examples/kuramoto_sivashinsky/ks.jl`; the search finds the shortest pre-periodic orbit of the
-system, traversed twice:
+The Kuramoto–Sivashinsky equation, $\partial_t u = -u\,\partial_x u - \partial_x^2 u - \partial_x^4 u$,
+on a periodic domain of length $L = 22$ (Cvitanović, Davidchack & Siminos, SIAM J. Appl. Dyn. Syst.
+2010). An orbit is searched for from a near-recurrence of a chaotic trajectory, with the model of
+`examples/kuramoto_sivashinsky/ks.jl`, and the Newton–Krylov hookstep converges it with a
+preconditioner built from the linear part of the equation; the search finds the shortest
+pre-periodic orbit of the system, traversed twice:
 
 ```julia
 using ReSolverV2
@@ -49,13 +53,16 @@ g = KSGrid(22, 33, 49)                                # 33 points in x, 49 in re
 x = initial_orbit(U, g, Δt, i, m, ℓ)                  # from a near-recurrence of a trajectory U
 
 F = System(KSNonlinear(g), KSLinearised(g), KSLinearised(g; adjoint=true), dds!, x;
-           linearise!, ddi=(ddx!,), B=KSPreconditioner(x))
+           linearise!, ddi=(ddx!,), B=KSPreconditioner(x; kind=:jacobian))
 
-solve!(x, F, LBFGS(maxiter=300))                      # far from the solution
-solve!(x, F, NewtonHookstep(krylov_dim=150))          # close to it
+solve!(x, F, NewtonHookstep(maxiter=50, krylov_dim=150, Δ=0.1, Δmax=10))
 ```
 
 ![Shortest pre-periodic orbit of Kuramoto–Sivashinsky on L = 22](examples/kuramoto_sivashinsky/example.png)
+
+From left to right: the initial guess and the converged orbit; the residual against the Newton
+iterations, hooksteps open and full Newton steps filled; the convergence of GMRES in each Newton
+iteration.
 
 The `examples/` folder has the Kuramoto–Sivashinsky equation and the Lorenz system, each with a
 model file, an example, a convergence study and an analysis of the preconditioners:

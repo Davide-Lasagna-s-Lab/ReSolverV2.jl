@@ -2,7 +2,7 @@
 #
 # Starting from a unit step, the step α along the direction p is halved until
 #
-#     J(x + α p) ≤ J(x) + c₁ α ⟨g, p⟩,
+#     R(x + α p) ≤ R(x) + c₁ α ⟨g, p⟩,
 #
 # or until it falls below the smallest step or the attempts run out. The trial point is left in
 # `xt` even when the condition fails: the caller decides what to do with it.
@@ -17,18 +17,18 @@ function _linesearch!(xt::Orbit,
                        x::Orbit,
                        p::Orbit,
                        g::Orbit,
-                       J::Real)
+                       R::Real)
 
     # ---- slope along the direction ----
-    dJ = dot(g, p)
+    dR = dot(g, p)
     α  = 1.0
 
     for _ in 1:MAX_TRIALS
         # ---- trial point and Armijo test ----
         xt .= x .+ α .* p
-        Jt  = objective(F, xt)
+        Rt  = objective(F, xt)
 
-        isfinite(Jt) && Jt <= J + ARMIJO * α * dJ && return α, Jt
+        isfinite(Rt) && Rt <= R + ARMIJO * α * dR && return α, Rt
 
         # ---- shorter step ----
         α *= CONTRACTION

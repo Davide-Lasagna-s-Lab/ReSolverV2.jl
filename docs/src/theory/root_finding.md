@@ -7,22 +7,61 @@ globalised by the hookstep trust region of Viswanath (2007). Equations of the
 
 ## Newton step
 
-At the current orbit ``p`` Newton's method looks for the step ``\delta p = (\delta u, \delta\rho,
-\delta c)`` that cancels the linearised residual, ``r(p + \delta p) \approx r(p) + \delta r = 0``,
-and moves to ``p + \delta p``. From (F6), the linearised residual is
+Newton's method replaces the nonlinear equation ``r(p) = 0`` by a sequence of linear ones. At the
+current orbit ``p``, the residual at a nearby orbit ``p + \delta p``, with
+``\delta p = (\delta u, \delta\rho, \delta c)``, is expanded to first order,
 
 ```math
-\delta r = A\,\delta u + \omega\,\partial_s u\;\delta\rho - \sum_{i=1}^{m} \partial_i u\;\delta c_i ,
+r(p + \delta p) = r(p) + \mathcal{J}_r\,\delta p + O(\lVert \delta p\rVert^2) , \tag{1a}
+```
+
+where ``\mathcal{J}_r`` is the Jacobian of the residual: the linear operator that maps a variation of
+the orbit to the first-order variation ``\delta r`` of the residual. The Newton step is the
+``\delta p`` that cancels the right-hand side truncated to first order,
+
+```math
+\mathcal{J}_r\,\delta p = -r(p) , \tag{1b}
+```
+
+and the next orbit is ``p + \delta p``. If ``r`` were linear, one step would land on the solution;
+close to a solution the neglected term is quadratic in ``\delta p``, and the error is squared at
+every step.
+
+**The Jacobian.** The first-order variation of the residual was computed in
+[Search by optimisation](@ref), equation (3) there: perturbing ``u``, ``\rho = \log\omega`` and the
+``c_i`` in (F6), expanding ``\omega\, e^{\delta\rho} \approx \omega(1 + \delta\rho)`` and
+``N(u + \delta u) \approx N(u) + L\,\delta u``, and keeping the terms linear in the variations.
+Grouped by unknown,
+
+```math
+\mathcal{J}_r\,\delta p
+= \underbrace{A\,\delta u}_{\text{field}}
++ \underbrace{\omega\,\partial_s u\;\delta\rho}_{\text{frequency}}
+- \underbrace{\sum_{i=1}^{m} \partial_i u\;\delta c_i}_{\text{drift speeds}} ,
 \qquad
 A = \omega\,\partial_s - \sum_i c_i\,\partial_i - L , \tag{1}
 ```
 
-with ``A`` the linearised space-time operator, ``L`` taken about ``u``, and ``m`` the number of drift
-directions.
+with ``A`` the linearised space-time operator, ``L = L\{u\}`` the linearised operator about the
+current field, and ``m`` the number of drift directions. Each unknown contributes one block: the
+field through the operator ``A``, which acts on the whole space-time field ``\delta u``; the
+log-frequency through the single field ``\omega\,\partial_s u``, the derivative of the residual with
+respect to ``\rho``; each drift speed through the single field ``-\partial_i u``. In matrix form, with
+the field and the parameters stacked,
+
+```math
+\mathcal{J}_r = \begin{bmatrix} A & \omega\,\partial_s u & -\partial_1 u & \cdots & -\partial_m u
+\end{bmatrix} ,
+```
+
+one block row with as many rows as field unknowns, and ``1 + m`` more columns. Computing
+``\mathcal{J}_r\,\delta p`` costs one linearised operator ``L\,\delta u``, the derivatives
+``\partial_s\delta u`` and ``\partial_i\delta u``, and the derivatives ``\partial_s u`` and
+``\partial_i u`` of the current orbit, which do not change during a Newton iteration.
 
 ## Two defects and the phase conditions
 
-The equation ``\delta r = -r`` cannot be solved as it stands.
+The Newton equation (1b), ``\mathcal{J}_r\,\delta p = -r``, cannot be solved as it stands.
 
 1. *Too many unknowns.* It has as many equations as field unknowns ``\delta u``, but ``1 + m`` more
    unknowns, ``\delta\rho`` and the ``\delta c_i``.
@@ -52,7 +91,8 @@ position of the orbit along the drift directions, which the residual cannot dete
 
 ## Block system
 
-Together, the linearised residual and the phase conditions form the Newton system
+Together, the Newton equation (1b) and the phase conditions form the Newton system, whose first
+block row is ``\mathcal{J}_r``:
 
 ```math
 \underbrace{\begin{bmatrix}
@@ -192,7 +232,7 @@ and discards the rest.
 ## Trust-region update
 
 The model predicts the reduction ``\tfrac12\big(\beta^2 - \lVert g - Hy\rVert^2\big)`` of
-``J = \tfrac12\lVert r\rVert^2``; the trial point ``p + \delta p`` gives the actual one, at the cost
+``R = \tfrac12\lVert r\rVert^2``; the trial point ``p + \delta p`` gives the actual one, at the cost
 of one nonlinear operator. Their ratio ``\gamma`` drives the radius:
 
 | ratio | meaning | action |
@@ -207,14 +247,23 @@ Newton step.
 
 ## Inexact Newton
 
-The Krylov space grows until the residual of the model falls below a fraction of the right-hand
+The Krylov space grows until the GMRES step, the unconstrained least-squares solution
+``y_0 = \arg\min_y \lVert g - Hy\rVert``, solves the Newton system to a fraction of the right-hand
 side,
 
 ```math
-\lVert g - H y\rVert \le \tau\, \beta , \tag{12}
+\lVert g - H y_0\rVert \le \tau\, \beta , \tag{12}
 ```
 
-with ``\tau`` the option `krylov_tol`, or until it reaches `krylov_dim` vectors. This is an
+with ``\tau`` the option `krylov_tol`, or until it reaches `krylov_dim` vectors; the hookstep (10)
+is then computed in that space. The criterion is on the unconstrained problem, not on the hookstep,
+on purpose. When the trust region is active the hookstep cannot reduce the residual of the model
+below the level reached by a step of length ``\Delta``: if the Newton step is ten times longer than
+the radius, ``\lVert g - Hy\rVert`` stalls close to ``\beta`` however large the Krylov space, and a
+criterion on it would build ``\texttt{krylov\_dim}`` vectors at every step limited by the trust
+region, with no benefit. With (12), the space is the one in which the Newton step is known to
+accuracy ``\tau``, and the hookstep chooses the best part of that step that the trust region allows;
+for the first Kuramoto–Sivashinsky example this halves the cost of the search. This is an
 *inexact Newton* method (Dembo, Eisenstat & Steihaug 1982): each step reduces the residual of the
 linear model by the factor ``\tau`` only, and close to the solution the Newton iteration converges
 linearly with a rate about ``\tau``, rather than quadratically. Solving the Newton system exactly,

@@ -219,7 +219,7 @@ fig = Figure(size=(1300, 470), fontsize=13)
 
 panels = ((:jacobian, "Jacobian actions", "Jacobian actions", log10),
           (:time, "time", "time [s]", log10),
-          (:newton, "Newton iterations", "Newton iterations", identity))
+          (:newton, "Newton iterations", "Newton iterations", log10))
 axc    = [Axis(fig[1, j]; title="cost of ‖r‖ < 10⁻⁹: " * title,
                xlabel="tolerance on the Newton system", ylabel, xscale=log10, yscale,
                xreversed=true)
@@ -239,7 +239,7 @@ for ax in axc
     logticks!(ax, minimum(tols), maximum(tols))
 end
 # the logarithmic axes span whole decades, so that every one has a labelled major tick
-for (ax, field) in zip(axc[1:2], (:jacobian, :time))
+for (ax, field) in zip(axc, (:jacobian, :time, :newton))
     vals = filter(isfinite, [getfield(c, field) for c in values(cost)])
     lo   = 10.0^floor(log10(minimum(vals)))
     hi   = 10.0^ceil(log10(maximum(vals)))

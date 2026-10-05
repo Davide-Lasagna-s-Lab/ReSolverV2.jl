@@ -33,7 +33,7 @@ time and ``\lambda(k_{\max})`` along space: ``\nu k_{\max}^2`` for viscous diffu
 system the time derivative alone spans ``\omega n`` from 0 to ``\omega K`` with ``K`` modes. The
 two methods see this spread in different ways.
 
-- **L-BFGS** minimises ``J`` (O1), whose Hessian near a minimiser is, in the Gauss–Newton
+- **L-BFGS** minimises ``R`` (O1), whose Hessian near a minimiser is, in the Gauss–Newton
   approximation, ``\mathcal{J}_r^+ \mathcal{J}_r``, with eigenvalues ``|\hat A(n, k)|^2``. Its
   condition number grows like ``k_{\max}^8`` for Kuramoto–Sivashinsky. Starting every recursion
   from ``\theta I`` and correcting it with a handful of curvature pairs (O7), L-BFGS cannot
@@ -72,7 +72,7 @@ in which each direction is measured by its size under ``B``. The solutions ``r =
 ``B``; only the path of the two methods does.
 
 **L-BFGS in the metric ``M``.** By the Riesz representation theorem, as in (O2), the gradient in
-this metric is ``M^{-1}\nabla J``. Running L-BFGS in it changes the two-loop recursion in two places:
+this metric is ``M^{-1}\nabla R``. Running L-BFGS in it changes the two-loop recursion in two places:
 the initial inverse Hessian
 
 ```math
@@ -142,7 +142,7 @@ place, so that the eigenvalues of the linear part of ``\mathcal{J}B^{-1}`` lie n
 rather than near ``1``. The two variants have opposite merits for the two methods. For the hookstep
 only ``\mathcal{J}B^{-1}`` matters, and the complex operator, which clusters the spectrum at one, is
 the better choice. For L-BFGS the metric ``M = B^+B`` has the symbol ``|\hat A|^2``, which is close to
-zero on the slow, linearly unstable modes, where ``\hat A`` is small; the gradient ``M^{-1}\nabla J``
+zero on the slow, linearly unstable modes, where ``\hat A`` is small; the gradient ``M^{-1}\nabla R``
 then amplifies these modes by large factors, and the positive variant, bounded below by one, gives a
 better metric. Nothing requires the same ``B`` for both methods: a [`System`](@ref) can be rebuilt with
 a different preconditioner between the L-BFGS and the hookstep phases of a search.

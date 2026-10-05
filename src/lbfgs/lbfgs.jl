@@ -1,4 +1,4 @@
-# Limited-memory BFGS on J = ½‖r‖², from ResolverOptimAlgorithms.
+# Limited-memory BFGS on R = ½‖r‖², from ResolverOptimAlgorithms.
 #
 # The search direction is -H g, with H the inverse-Hessian approximation of the last m curvature
 # pairs (s, y) = (x₊ - x, g₊ - g), applied by the two-loop recursion. A pair is kept only if its
@@ -134,23 +134,23 @@ function solve!(     x::Orbit,
     y   = similar(x) # gradient change
 
     # ---- initial point ----
-    J = gradient!(g, F, x)
+    R = gradient!(g, F, x)
     α = 0.0
 
     verbose && _print_lbfgs_header(io)
-    verbose && _print_lbfgs_row(io, 0, J, norm(g), α, frequency(x))
-    stop = callback(_info(0, x, J, F))
+    verbose && _print_lbfgs_row(io, 0, R, norm(g), α, frequency(x))
+    stop = callback(_info(0, x, R, F))
 
     for iter in 1:maxiter
-        (stop || sqrt(2J) < tol) && break
+        (stop || sqrt(2R) < tol) && break
 
         # ---- quasi-Newton direction, or steepest descent if it does not descend ----
         _direction!(p, g, mem, F)
         dot(g, p) >= 0 && (p .= .-g)
 
         # ---- step along the direction ----
-        α, _ = _linesearch!(xt, F, x, p, g, J)
-        Jt   = gradient!(gt, F, xt)
+        α, _ = _linesearch!(xt, F, x, p, g, R)
+        Rt   = gradient!(gt, F, xt)
 
         # ---- curvature pair ----
         s .= xt .- x
@@ -160,10 +160,10 @@ function solve!(     x::Orbit,
         # ---- accept ----
         x .= xt
         g .= gt
-        J  = Jt
+        R  = Rt
 
-        verbose && _print_lbfgs_row(io, iter, J, norm(g), α, frequency(x))
-        stop = callback(_info(iter, x, J, F))
+        verbose && _print_lbfgs_row(io, iter, R, norm(g), α, frequency(x))
+        stop = callback(_info(iter, x, R, F))
     end
 
     # ---- leave the residual of x in the cache ----
@@ -177,7 +177,7 @@ end
 # output                                                                       #
 # ---------------------------------------------------------------------------- #
 _print_lbfgs_header(io::IO) =
-    println(io, "  iter      ‖r‖         ‖∇J‖        step          ω")
+    println(io, "  iter      ‖r‖         ‖∇R‖        step          ω")
 
-_print_lbfgs_row(io::IO, iter, J, gnorm, α, ω) =
-    @printf(io, "%6d  %.4e  %.4e  %.3e  %.6e\n", iter, sqrt(2J), gnorm, α, ω)
+_print_lbfgs_row(io::IO, iter, R, gnorm, α, ω) =
+    @printf(io, "%6d  %.4e  %.4e  %.3e  %.6e\n", iter, sqrt(2R), gnorm, α, ω)

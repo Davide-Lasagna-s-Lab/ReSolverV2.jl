@@ -136,16 +136,63 @@ N(u_0 + \delta u) = N(u_0) + L\{u_0\}\,\delta u + O(\lVert \delta u\rVert^2) . \
   the moving frame. On the Fourier coefficients it multiplies the mode of wavenumber ``k_i`` by
   ``\mathrm{i}\,k_i``.
 
-Being multiplications by imaginary numbers, mode by mode, ``\partial_s`` and ``\partial_i`` are
-skew-adjoint in the inner product of ``\mathcal{U}``,
+**Skew-adjointness of the derivatives.** The two derivatives have a property that the methods rely
+on: they are *skew-adjoint* in the inner product of ``\mathcal{U}``,
 
 ```math
-\langle \partial u, v\rangle = -\langle u, \partial v\rangle , \tag{12}
+\langle \partial u, v\rangle = -\langle u, \partial v\rangle
+\quad \text{for all } u, v \in \mathcal{U}, \qquad \partial = \partial_s \text{ or } \partial_i , \tag{12}
 ```
 
-so that each derivative is its own adjoint up to a sign. In a discretisation this property must hold
-exactly, not only up to discretisation errors, for the gradient of the next page to be exact: Fourier
-derivatives on an odd number of points, without the unpaired Nyquist mode, satisfy it.
+i.e. each derivative is its own adjoint up to a sign, ``\partial^+ = -\partial``. In the continuous
+setting this is integration by parts: along ``s``,
+
+```math
+\int_0^{2\pi} \partial_s u\; v \,\mathrm{d}s
+= \big[\, u\, v \,\big]_0^{2\pi} - \int_0^{2\pi} u\; \partial_s v \,\mathrm{d}s
+= - \int_0^{2\pi} u\; \partial_s v \,\mathrm{d}s ,
+```
+
+where the boundary term vanishes because the fields are periodic in ``s``; along a drift direction
+the argument is the same, the fields being periodic along every direction of translational
+symmetry. Equivalently, in Fourier, ``\partial`` multiplies each mode by an imaginary number,
+``\mathrm{i}\,n`` or ``\mathrm{i}\,k_i``, whose complex conjugate is its opposite.
+
+**Why it matters.** The gradient used by L-BFGS ([Search by optimisation](@ref)) is obtained by
+moving the derivatives off the variation ``\delta u`` and onto the residual ``r`` with (12): a term
+``\langle r, \omega\,\partial_s\delta u\rangle`` of the variation of ``\tfrac12\lVert r\rVert^2``
+becomes ``\langle -\omega\,\partial_s r, \delta u\rangle``, which identifies
+``-\omega\,\partial_s r`` as a contribution to the gradient. The methods, though, work with the
+*discretised* problem: the fields are vectors of numbers, ``\partial`` is a matrix ``D``, and the
+inner product is a weighted sum. The formula for the gradient is the exact gradient of the discrete
+``\tfrac12\lVert r\rVert^2`` only if (12) holds for ``D`` and the discrete inner product as an
+algebraic identity, ``\langle D u, v\rangle = -\langle u, D v\rangle`` for every pair of discrete
+fields, up to rounding errors. It is not enough that ``D`` approximates a skew-adjoint operator to
+the order of the discretisation: an error of order ``h^q`` in (12) makes the computed gradient differ
+from the true one by a term of the same order, which does not vanish at the minimum. Close to a
+solution, where the true gradient is small, this error dominates, the search direction is no longer
+a descent direction, and the line search fails. This is the meaning of *exactly* in the
+requirements of the package: an identity of the discrete operators, to rounding, not an
+approximation that improves with the resolution.
+
+Which discretisations satisfy it:
+
+- Fourier derivatives on an odd number of points: every mode ``n`` is paired with ``-n``, and the
+  derivative is a multiplication by ``\mathrm{i}\,n`` on each pair. With an even number the Nyquist
+  mode has no partner, its derivative must be set to zero, and operators built from the derivatives
+  become inconsistent (the second derivative no longer equals the square of the first); odd sizes
+  avoid the question.
+- Central finite differences on a uniform periodic grid, with the inner product the mean over the
+  grid points: their matrices are skew-symmetric.
+- Not one-sided differences, nor central differences on a non-uniform grid with an unweighted inner
+  product.
+
+The same holds for the adjoint operator ``L^+``: it must be the exact adjoint of the discrete
+linearised operator in the discrete inner product, the transpose of its matrix up to the weights of
+the inner product, not a discretisation of the continuous adjoint. The two differ by discretisation
+errors, for instance through aliasing or the treatment of products, and only the first gives an
+exact gradient. Newton's method needs neither property: the hookstep uses only the actions of
+``L``, ``\partial_s`` and ``\partial_i``. The [Usage](@ref) page lists checks of both properties.
 
 The user provides the five operators as functions, together with the inner product of the fields;
 the search uses nothing else about the system (see [Usage](@ref)).
